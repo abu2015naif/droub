@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "manager", "staff", "customer"] }
+      },
+      "required": ["uid", "email"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Product details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "string" },
+        "regular_price": { "type": "string" },
+        "on_sale": { "type": "boolean" },
+        "images": { "type": "array", "items": { "type": "object", "properties": { "src": { "type": "string" } } } },
+        "categories": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "number" }, "name": { "type": "string" } } } },
+        "stock_status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "price"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "items": { "type": "array" },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "processing", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "items", "total", "status", "createdAt"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "User's favorite product",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "number" },
+        "addedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "addedAt"]
+    },
+    "Banner": {
+      "title": "Banner",
+      "description": "Homepage banner image and text",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "url": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "link": { "type": "string" },
+        "order": { "type": "number" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["url", "order", "active"]
+    },
+    "Showroom": {
+      "title": "Showroom",
+      "description": "Physical showroom location and contact info",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "city": { "type": "string" },
+        "locationLink": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "phone": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["city", "locationLink", "whatsapp", "phone", "active"]
+    },
+    "BankDetails": {
+      "title": "BankDetails",
+      "description": "Bank account details for transfers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "bankName": { "type": "string" },
+        "accountName": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "iban": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["bankName", "accountName", "accountNumber", "iban", "active"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global application settings (e.g., bank details)",
+      "type": "object",
+      "properties": {
+        "bankDetails": {
+          "type": "object",
+          "properties": {
+            "accountName": { "type": "string" },
+            "iban": { "type": "string" },
+            "accountNumber": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and roles"
+    },
+    "/users/{userId}/favorites/{productId}": {
+      "schema": "Favorite",
+      "description": "User's favorite products"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Store products"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Customer orders"
+    },
+    "/banners/{bannerId}": {
+      "schema": "Banner",
+      "description": "Homepage banners"
+    },
+    "/showrooms/{showroomId}": {
+      "schema": "Showroom",
+      "description": "Showroom locations"
+    },
+    "/bank_accounts/{accountId}": {
+      "schema": "BankDetails",
+      "description": "Bank accounts for transfers"
+    },
+    "/settings/{settingId}": {
+      "schema": "Settings",
+      "description": "App settings"
+    }
+  }
+}
