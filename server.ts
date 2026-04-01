@@ -14,23 +14,46 @@ async function startServer() {
   
   console.log("Initializing WooCommerce with URL:", siteUrl);
   
+  const consumerKey = (process.env.WC_CONSUMER_KEY || "").trim();
+  const consumerSecret = (process.env.WC_CONSUMER_SECRET || "").trim();
+
+  if (!consumerKey || !consumerSecret) {
+    console.warn("⚠️ WooCommerce API Keys are missing! Please check your environment variables.");
+  }
+
   let WooCommerce: any;
   try {
     WooCommerce = new WC({
       url: siteUrl,
-      consumerKey: (process.env.WC_CONSUMER_KEY || "").trim(),
-      consumerSecret: (process.env.WC_CONSUMER_SECRET || "").trim(),
+      consumerKey: consumerKey,
+      consumerSecret: consumerSecret,
       version: "wc/v3",
-      queryString: true // Use query string for auth, often more reliable
+      queryString: true,
+      timeout: 20000,
+      axiosConfig: {
+        // This is crucial if the site shows "Not Secure" in the browser
+        // It allows Node.js to connect even if the SSL certificate is invalid
+        httpsAgent: new (require('https').Agent)({
+          rejectUnauthorized: false
+        })
+      }
     });
   } catch (err: any) {
-    console.error("Failed to initialize WooCommerce SDK:", err.message);
+    console.error("❌ Failed to initialize WooCommerce SDK:", err.message);
   }
 
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Middleware to check if WooCommerce is initialized
+  app.use((req, res, next) => {
+    if (!WooCommerce && req.path.startsWith("/api/")) {
+      return res.status(503).json({ error: "WooCommerce SDK not initialized" });
+    }
+    next();
+  });
 
   // API Routes
   app.get("/api/products", async (req, res) => {
@@ -45,8 +68,19 @@ async function startServer() {
       });
       res.json(response.data);
     } catch (error: any) {
-      console.error("WooCommerce API Error (Products):", error.response?.data || error.message);
-      res.status(500).json({ error: "Failed to fetch products" });
+      let errorData = error.response?.data || error.message;
+      
+      // If the error data is HTML (starts with <), it means the WP site returned a web page instead of JSON
+      if (typeof errorData === 'string' && errorData.trim().startsWith('<')) {
+        console.error("❌ WooCommerce returned HTML instead of JSON. Check your URL and Permalinks.");
+        errorData = { message: "WordPress returned an HTML error page. This usually means the API URL is incorrect or Permalinks are not enabled.", htmlSnippet: errorData.substring(0, 200) };
+      }
+
+      console.error("❌ WooCommerce API Error (Products):", errorData);
+      res.status(error.response?.status || 500).json({ 
+        error: "Failed to fetch products",
+        details: errorData 
+      });
     }
   });
 
@@ -58,8 +92,17 @@ async function startServer() {
       });
       res.json(response.data);
     } catch (error: any) {
-      console.error("WooCommerce API Error (Categories):", error.response?.data || error.message);
-      res.status(500).json({ error: "Failed to fetch categories" });
+      let errorData = error.response?.data || error.message;
+
+      if (typeof errorData === 'string' && errorData.trim().startsWith('<')) {
+        errorData = { message: "WordPress returned an HTML error page.", htmlSnippet: errorData.substring(0, 200) };
+      }
+
+      console.error("❌ WooCommerce API Error (Categories):", errorData);
+      res.status(error.response?.status || 500).json({ 
+        error: "Failed to fetch categories",
+        details: errorData
+      });
     }
   });
 
@@ -325,16 +368,31 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    // On Vercel, static files are handled by vercel.json, but we keep this for local production testing
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    if (require('fs').existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
+  }
+
+  // Only listen if not in a serverless environment (like Vercel)
+  if (process.env.NODE_ENV !== "production" || (!process.env.VERCEL && !process.env.NOW_REGION)) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  return app;
 }
 
-startServer();
+// For Vercel, we need to export the app instance. 
+// Since startServer is async, we export a handler that awaits it.
+const appPromise = startServer();
+
+export default async (req: any, res: any) => {
+  const app = await appPromise;
+  return app(req, res);
+};

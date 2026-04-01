@@ -1,71 +1,70 @@
-# تعليمات النشر على استضافة Namecheap (cPanel)
+# تعليمات استبدال موقعك القديم بالتصميم الجديد (Headless WooCommerce)
 
-لنشر متجرك الإلكتروني على استضافة Namecheap مع الحفاظ على ووردبريس وWooCommerce، اتبع الخطوات التالية:
+هذا الدليل سيشرح لك كيف تجعل التصميم الجديد هو الواجهة الرئيسية لموقعك `droubalsalamah.com` مع بقاء ووردبريس لإدارة المنتجات فقط.
 
-## 1. تجهيز المشروع (Build)
-قم بتشغيل الأمر التالي في جهازك المحلي (أو سيقوم النظام هنا بتجهيزه لك):
-```bash
-npm run build
-```
-هذا سينتج مجلد `dist` الذي يحتوي على ملفات الموقع والملف البرمجي للخادم (`server.js`).
+## 1. تجهيز ووردبريس (الخلفية)
+قبل رفع التصميم الجديد، يجب "إخلاء" الصفحة الرئيسية:
+1. ادخل إلى **File Manager** في cPanel.
+2. اذهب إلى مجلد `public_html`.
+3. أنشئ مجلداً جديداً باسم `wp` (أو أي اسم تفضله).
+4. انقل **جميع** ملفات ومجلدات ووردبريس الحالية إلى داخل هذا المجلد الجديد (`wp`).
+5. **هام:** ادخل إلى قاعدة البيانات (phpMyAdmin) وحدث جدول `wp_options`:
+   - غير `siteurl` إلى `https://droubalsalamah.com/wp`
+   - غير `home` إلى `https://droubalsalamah.com/wp`
+   *(الآن ستصبح لوحة تحكم ووردبريس متاحة على `droubalsalamah.com/wp/wp-admin`)*.
 
-**ملاحظة هامة:** إذا كنت تنوي نشر المتجر في مجلد فرعي (مثلاً `droubalsalamah.com/shop`) بدلاً من الصفحة الرئيسية، يجب عليك تعديل ملف `vite.config.ts` وإضافة خاصية `base: '/shop/'` قبل عملية البناء.
+## 2. تجهيز المشروع محلياً (Build)
+على جهازك الشخصي:
+1. افتح التيرمينال ونفذ `npm install`.
+2. نفذ `npm run build`.
+   *سينتج مجلد `dist` الجاهز للنشر.*
 
-## 2. إعداد تطبيق Node.js في cPanel
-1. سجل الدخول إلى **cPanel** في Namecheap.
-2. ابحث عن **"Setup Node.js App"**.
-3. اضغط على **"Create Application"**.
-4. حدد الإعدادات التالية:
-   - **Node.js version:** اختر أحدث نسخة مستقرة (مثلاً 20.x).
-   - **Application mode:** اختر `Production`.
-   - **Application root:** اكتب مسار المجلد الذي سترفع فيه الملفات (مثلاً `shop_app`).
-   - **Application URL:** اختر الدومين أو المجلد الفرعي (مثلاً `shop`).
-   - **Application startup file:** اكتب `dist/server.js`.
-5. اضغط على **"Create"**.
+## 3. إعداد تطبيق Node.js في cPanel (الواجهة الجديدة)
+1. في cPanel، ابحث عن **"Setup Node.js App"**.
+2. اضغط على **"Create Application"**.
+3. الإعدادات:
+   - **Node.js version:** أحدث نسخة (20.x).
+   - **Application mode:** `Production`.
+   - **Application root:** مجلد المشروع (مثلاً `new_site`).
+   - **Application URL:** اختر الدومين الرئيسي `/` (اتركه فارغاً بعد الدومين).
+   - **Application startup file:** `dist/server.js`.
+4. اضغط على **"Create"**.
 
-## 3. رفع الملفات
-1. اذهب إلى **"File Manager"** في cPanel.
-2. ادخل إلى المجلد الذي حددته في الخطوة السابقة (`shop_app`).
-3. ارفع محتويات مشروعك بالكامل (باستثناء مجلد `node_modules`).
-4. تأكد من وجود ملف `package.json` و `dist` و `.env`.
-
-## 4. تثبيت الحزم (Dependencies)
-1. عد إلى صفحة **"Setup Node.js App"**.
-2. اضغط على زر **"Run npm install"** (سيقوم بقراءة ملف `package.json` وتثبيت المكتبات اللازمة).
+## 4. رفع الملفات وتثبيت الحزم
+1. ارفع ملفات المشروع إلى مجلد `new_site` (باستثناء `node_modules`).
+2. في صفحة Node.js App، اضغط **"Run npm install"**.
 
 ## 5. إعداد متغيرات البيئة (Environment Variables)
-في نفس صفحة Node.js App، أضف المتغيرات التالية في قسم **"Environment variables"**:
-- `WC_SITE_URL`: `https://droubalsalamah.com`
+أضف المتغيرات التالية (لاحظ تغيير رابط الموقع):
+- `WC_SITE_URL`: `https://droubalsalamah.com/wp` (الرابط الجديد لووردبريس)
 - `WC_CONSUMER_KEY`: (مفتاح WooCommerce الخاص بك)
 - `WC_CONSUMER_SECRET`: (السر الخاص بـ WooCommerce)
 - `TELR_STORE_ID`: (معرف متجر Telr)
 - `TELR_API_KEY`: (مفتاح API الخاص بـ Telr)
 - `NODE_ENV`: `production`
 
-## 6. إعداد ملف .htaccess (اختياري)
-في بعض الأحيان، قد تحتاج لإضافة ملف `.htaccess` في المجلد الرئيسي للموقع لتوجيه الطلبات إلى تطبيق Node.js:
-```apache
-RewriteEngine On
-RewriteRule ^$ http://127.0.0.1:3000/ [P,L]
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ http://127.0.0.1:3000/$1 [P,L]
-```
-*(ملاحظة: cPanel غالباً ما يقوم بهذا تلقائياً عند إنشاء تطبيق Node.js).*
+## 7. أين تجد مفاتيح الربط (API Keys)؟
 
-## 7. إعادة تشغيل التطبيق
-اضغط على **"Restart"** في صفحة Node.js App.
+### أ- مفاتيح WooCommerce:
+1. من ووردبريس: **WooCommerce** > **Settings** > **Advanced** > **REST API**.
+2. اضغط **Add Key**.
+3. الصلاحيات: **Read/Write**.
+4. ستحصل على `Consumer Key` و `Consumer Secret`.
 
-## 8. إعداد Firebase (هام جداً)
-بما أنك تستخدم Firebase لتسجيل الدخول، يجب عليك إضافة الدومين الجديد إلى قائمة النطاقات المصرح لها:
-1. اذهب إلى **Firebase Console**.
-2. اختر مشروعك، ثم اذهب إلى **Authentication** > **Settings** > **Authorized domains**.
-3. أضف الدومين الخاص بك: `droubalsalamah.com`.
-4. إذا كنت تستخدم مجلداً فرعياً، الدومين الرئيسي يكفي.
+### ب- مفاتيح بوابة الدفع Telr:
+1. سجل دخولك لموقع **Telr Merchant Dashboard**.
+2. **Store ID**: موجود في إعدادات الحساب.
+3. **API Key**: موجود في قسم **Integration**.
+
+## 8. إعداد Firebase
+يجب إضافة الدومين الرئيسي `droubalsalamah.com` في قائمة **Authorized domains** في Firebase Console.
 
 ---
 
-### ملاحظات هامة:
+### النتيجة النهائية:
+*   **الزوار:** عند دخولهم لـ `droubalsalamah.com` سيشاهدون التصميم الجديد فوراً.
+*   **أنت:** ستدير المنتجات والطلبات من خلال `droubalsalamah.com/wp/wp-admin`.
+*   **NODE_ENV**: تأكد من ضبطها على `production` في cPanel لضمان أفضل أداء للموقع.
 * **WooCommerce API:** تأكد من تفعيل "REST API" في إعدادات ووردبريس (WooCommerce > Settings > Advanced > REST API) وإنشاء مفاتيح بصلاحيات "Read/Write".
 * **CORS:** الخادم (Express) مهيأ بالفعل للتعامل مع الطلبات، ولكن تأكد من أن شهادة SSL (HTTPS) مفعلة على موقعك.
 * **WordPress:** سيبقى موقعك الحالي يعمل كما هو، وسيكون المتجر الجديد متاحاً على الرابط الذي اخترته (مثلاً `droubalsalamah.com/shop`).
