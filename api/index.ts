@@ -10,13 +10,15 @@ dotenv.config();
 
 async function startServer() {
   const WC = (WooCommerceRestApi as any).default || WooCommerceRestApi;
-  let siteUrl = (process.env.WC_SITE_URL || "https://droubalsalamah.com").trim();
-  if (!siteUrl.startsWith("http")) siteUrl = `https://${siteUrl}`;
+  // Force the correct API URL provided by the user
+  let siteUrl = "https://api.droubalsalamah.com";
+  // Remove trailing slashes
+  siteUrl = siteUrl.replace(/\/+$/, "");
   
   console.log("Initializing WooCommerce with URL:", siteUrl);
   
-  const consumerKey = (process.env.WC_CONSUMER_KEY || "").trim();
-  const consumerSecret = (process.env.WC_CONSUMER_SECRET || "").trim();
+  const consumerKey = "ck_8568a5b756c43e80c76d3a75eb4660c1450f24ac";
+  const consumerSecret = "cs_2a01a6b56e4ac796a07d75dfbfdaa0b1367c28f2";
 
   if (!consumerKey || !consumerSecret) {
     console.warn("⚠️ WooCommerce API Keys are missing! Please check your environment variables.");
@@ -29,16 +31,34 @@ async function startServer() {
       consumerKey: consumerKey,
       consumerSecret: consumerSecret,
       version: "wc/v3",
-      queryStringAuth: true,
+      queryStringAuth: false, // Use Basic Auth for HTTPS
       timeout: 20000,
       axiosConfig: {
-        // This is crucial if the site shows "Not Secure" in the browser
-        // It allows Node.js to connect even if the SSL certificate is invalid
+        headers: {
+          'User-Agent': 'WooCommerce-Rest-API-Client/1.0'
+        },
         httpsAgent: new https.Agent({
           rejectUnauthorized: false
         })
       }
     });
+
+    // Test connection on startup
+    console.log("🔍 Testing WooCommerce connection...");
+    WooCommerce.get("products", { per_page: 1 })
+      .then((response: any) => {
+        console.log("✅ WooCommerce connection successful! Found", response.headers['x-wp-total'], "products.");
+      })
+      .catch((err: any) => {
+        console.error("❌ WooCommerce connection test failed!");
+        console.error("Error details:", err.response?.data || err.message);
+        if (err.response?.status === 401) {
+          console.error("Check if your API keys have the correct permissions (Read/Write).");
+        } else if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
+          console.error("Could not reach the server. Check the URL.");
+        }
+      });
+
   } catch (err: any) {
     console.error("❌ Failed to initialize WooCommerce SDK:", err.message);
   }
@@ -77,6 +97,43 @@ async function startServer() {
   const setCachedData = (key: string, data: any) => {
     cache[key] = { data, timestamp: Date.now() };
   };
+
+  app.get("/api/debug/woocommerce", async (req, res) => {
+    try {
+      console.log("🔍 Debug: Testing connection to", siteUrl);
+      const response = await WooCommerce.get("products", { per_page: 1 });
+      
+      // Check if response is HTML (common when hitting a frontend instead of API)
+      const contentType = response.headers['content-type'] || '';
+      if (contentType.includes('text/html')) {
+        return res.status(500).json({
+          status: "error",
+          message: "Received HTML instead of JSON. You might be hitting the frontend instead of the API.",
+          url: siteUrl,
+          contentType: contentType,
+          preview: typeof response.data === 'string' ? response.data.substring(0, 200) : "Not a string"
+        });
+      }
+
+      res.json({
+        status: "success",
+        url: siteUrl,
+        productCount: response.headers['x-wp-total'],
+        headers: response.headers,
+        sampleData: Array.isArray(response.data) && response.data[0] ? { id: response.data[0].id, name: response.data[0].name } : null
+      });
+    } catch (error: any) {
+      console.error("❌ Debug: Connection failed", error.message);
+      res.status(500).json({
+        status: "error",
+        url: siteUrl,
+        error: error.message,
+        details: error.response?.data || "No response data",
+        status_code: error.response?.status,
+        axios_error: error.code
+      });
+    }
+  });
 
   app.get(["/api/products", "/products"], async (req, res) => {
     try {
@@ -346,30 +403,38 @@ async function startServer() {
 
       // First get zones
       const zonesRes = await WooCommerce.get("shipping/zones");
-      const zones = zonesRes.data;
+      const zones = Array.isArray(zonesRes.data) ? zonesRes.data : [];
       
       let allMethods: any[] = [];
       
       // For each zone, get its methods
       for (const zone of zones) {
-        const methodsRes = await WooCommerce.get(`shipping/zones/${zone.id}/methods`);
-        const methods = methodsRes.data.map((m: any) => ({
-          ...m,
-          zone_id: zone.id,
-          zone_name: zone.name
-        }));
-        allMethods = [...allMethods, ...methods];
+        try {
+          const methodsRes = await WooCommerce.get(`shipping/zones/${zone.id}/methods`);
+          if (Array.isArray(methodsRes.data)) {
+            const methods = methodsRes.data.map((m: any) => ({
+              ...m,
+              zone_id: zone.id,
+              zone_name: zone.name
+            }));
+            allMethods = [...allMethods, ...methods];
+          }
+        } catch (e) {
+          console.error(`Error fetching methods for zone ${zone.id}:`, e);
+        }
       }
 
       // Also check "Locations not covered by your other zones" (Zone 0)
       try {
         const restOfWorldRes = await WooCommerce.get("shipping/zones/0/methods");
-        const restOfWorldMethods = restOfWorldRes.data.map((m: any) => ({
-          ...m,
-          zone_id: 0,
-          zone_name: "باقي المناطق"
-        }));
-        allMethods = [...allMethods, ...restOfWorldMethods];
+        if (Array.isArray(restOfWorldRes.data)) {
+          const restOfWorldMethods = restOfWorldRes.data.map((m: any) => ({
+            ...m,
+            zone_id: 0,
+            zone_name: "باقي المناطق"
+          }));
+          allMethods = [...allMethods, ...restOfWorldMethods];
+        }
       } catch (e) {
         // Zone 0 might not have methods or might fail in some WC versions
       }
@@ -385,7 +450,7 @@ async function startServer() {
   app.get("/api/shipping/zones", async (req, res) => {
     try {
       const response = await WooCommerce.get("shipping/zones");
-      const zones = response.data;
+      let zones = Array.isArray(response.data) ? response.data : [];
       
       // Add Zone 0 (Rest of the world)
       zones.push({

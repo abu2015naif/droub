@@ -33,8 +33,10 @@ import {
   Home,
   Grid,
   MessageCircle,
-  Upload
+  Upload,
+  AlertTriangle
 } from "lucide-react";
+import { SAMPLE_PRODUCTS, SAMPLE_CATEGORIES } from "./constants";
 import { Product, Category, CartItem, Banner, Showroom, BankDetails } from "./types";
 import { auth, db, googleProvider, signInWithPopup, signOut, doc, setDoc, deleteDoc, onSnapshot, collection, getDoc, addDoc, handleFirestoreError, OperationType, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, query, where, getDocs, orderBy, RecaptchaVerifier, signInWithPhoneNumber } from "./firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
@@ -98,6 +100,8 @@ export default function App() {
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isUsingSampleData, setIsUsingSampleData] = useState(false);
+  const [isUsingSampleCategories, setIsUsingSampleCategories] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -274,21 +278,41 @@ export default function App() {
       if (categoryId) params.append("category", categoryId.toString());
       if (search) params.append("search", search);
 
+      console.log(`📡 Fetching products: page=${pageNum}, category=${categoryId || 'all'}, search=${search || 'none'}`);
       const res = await fetch(`/api/products?${params.toString()}`);
-      const data = await res.json();
       
-      if (Array.isArray(data)) {
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error("❌ API Error fetching products:", errorData);
+        throw new Error(errorData.error || "Failed to fetch products");
+      }
+
+      const data = await res.json();
+      console.log(`✅ Received ${Array.isArray(data) ? data.length : 0} products from API`);
+      
+      if (Array.isArray(data) && data.length > 0) {
         if (append) {
           setProducts(prev => [...prev, ...data]);
         } else {
           setProducts(data);
         }
         setHasMore(data.length === 20);
+        setIsUsingSampleData(false);
       } else {
+        if (!append && !categoryId && !search) {
+          setProducts(SAMPLE_PRODUCTS);
+          setIsUsingSampleData(true);
+        }
         setHasMore(false);
       }
     } catch (error) {
       console.error("Error fetching products:", error);
+      if (!append && !selectedCategory && !searchQuery) {
+        setProducts(SAMPLE_PRODUCTS);
+        setIsUsingSampleData(true);
+      } else if (!append) {
+        setProducts([]);
+      }
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -300,9 +324,17 @@ export default function App() {
       try {
         const res = await fetch("/api/categories");
         const data = await res.json();
-        setCategories(Array.isArray(data) ? data : []);
+        if (Array.isArray(data) && data.length > 0) {
+          setCategories(data);
+          setIsUsingSampleCategories(false);
+        } else {
+          setCategories(SAMPLE_CATEGORIES);
+          setIsUsingSampleCategories(true);
+        }
       } catch (error) {
         console.error("Error fetching categories:", error);
+        setCategories(SAMPLE_CATEGORIES);
+        setIsUsingSampleCategories(true);
       }
     };
     fetchCategories();
@@ -606,6 +638,16 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Sample Data Notice */}
+      {(isUsingSampleData || isUsingSampleCategories) && (
+        <div className="bg-amber-50 border-b border-amber-200 py-2 px-4 text-center">
+          <p className="text-amber-800 text-xs font-medium flex items-center justify-center gap-2">
+            <AlertTriangle size={14} />
+            يتم عرض منتجات تجريبية حالياً. يرجى التأكد من صحة مفاتيح WooCommerce وتفعيل الـ Permalinks في متجرك.
+          </p>
+        </div>
+      )}
 
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-100">
@@ -2338,67 +2380,145 @@ function CheckoutPage({
 }
 
 function ProductDescription({ html, products, onProductClick }: { html: string, products: Product[], onProductClick: (p: Product) => void }) {
+  const [extraProducts, setExtraProducts] = useState<Product[]>([]);
+  
   if (!html) return null;
   
-  // Regex to find <a> tags
-  const linkRegex = /<a\s+[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi;
+  // Regex to find <a> tags OR plain URLs matching the product pattern
+  // We make it more flexible for the domain part
+  const urlRegex = /https?:\/\/[^\/\s"]+\/product\/([^/\s"<>]+)\/?/gi;
+  const idUrlRegex = /https?:\/\/[^\/\s"]+\/\?product=(\d+)/gi;
   
-  // Split the HTML string by the links
-  const parts = html.split(linkRegex);
+  let processedHtml = html;
   
-  const elements = [];
-  for (let i = 0; i < parts.length; i += 3) {
-    // Add the text part
-    if (parts[i]) {
-      elements.push(<span key={`text-${i}`} dangerouslySetInnerHTML={{ __html: parts[i] }} />);
+  // Combine all known products
+  const allKnownProducts = [...products, ...extraProducts];
+  const productMap = new Map<string, Product>();
+  allKnownProducts.forEach(p => {
+    productMap.set(p.slug, p);
+    if (p.id) productMap.set(p.id.toString(), p);
+  });
+
+  const getThumbnailHtml = (product: Product) => {
+    return `___PRODUCT_THUMBNAIL_${product.id}___`;
+  };
+
+  // Pass 1: Replace <a> tags
+  processedHtml = processedHtml.replace(/<a\s+[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, (match, href, text) => {
+    const slugMatch = href.match(/\/product\/([^/]+)\/?/);
+    const idMatch = href.match(/\?product=(\d+)/);
+    
+    if (slugMatch) {
+      try {
+        const decodedSlug = decodeURIComponent(slugMatch[1]);
+        if (productMap.has(decodedSlug)) return getThumbnailHtml(productMap.get(decodedSlug)!);
+        if (productMap.has(slugMatch[1])) return getThumbnailHtml(productMap.get(slugMatch[1])!);
+      } catch (e) {
+        if (productMap.has(slugMatch[1])) return getThumbnailHtml(productMap.get(slugMatch[1])!);
+      }
     }
     
-    // Add the link part as a thumbnail if it matches a product
-    if (i + 1 < parts.length) {
-      const href = parts[i + 1];
-      const linkText = parts[i + 2];
-      
-      // Try to find the product by slug or ID in the href
-      const slugMatch = href.match(/\/product\/([^/]+)\/?/);
-      const idMatch = href.match(/\?product=(\d+)/);
-      
-      let linkedProduct = null;
-      if (slugMatch) {
-        linkedProduct = products.find(p => p.slug === slugMatch[1]);
-      } else if (idMatch) {
-        linkedProduct = products.find(p => p.id === parseInt(idMatch[1]));
-      }
-      
+    if (idMatch && productMap.has(idMatch[1])) {
+      return getThumbnailHtml(productMap.get(idMatch[1])!);
+    }
+    return match;
+  });
+
+  // Pass 2: Replace plain URLs (slug format)
+  processedHtml = processedHtml.replace(urlRegex, (match, slug) => {
+    try {
+      const decodedSlug = decodeURIComponent(slug);
+      if (productMap.has(decodedSlug)) return getThumbnailHtml(productMap.get(decodedSlug)!);
+      if (productMap.has(slug)) return getThumbnailHtml(productMap.get(slug)!);
+    } catch (e) {
+      if (productMap.has(slug)) return getThumbnailHtml(productMap.get(slug)!);
+    }
+    return match;
+  });
+
+  // Pass 3: Replace plain URLs (ID format)
+  processedHtml = processedHtml.replace(idUrlRegex, (match, id) => {
+    if (productMap.has(id)) return getThumbnailHtml(productMap.get(id)!);
+    return match;
+  });
+
+  // Effect to fetch missing products
+  useEffect(() => {
+    const missingSlugs: string[] = [];
+    
+    // Find slugs in the HTML that aren't in our map
+    const matches = html.matchAll(/\/product\/([^/\s"<>]+)\/?/gi);
+    for (const match of matches) {
+      try {
+        const slug = match[1];
+        const decodedSlug = decodeURIComponent(slug);
+        if (!productMap.has(decodedSlug) && !productMap.has(slug) && !missingSlugs.includes(decodedSlug)) {
+          missingSlugs.push(decodedSlug);
+        }
+      } catch (e) {}
+    }
+
+    if (missingSlugs.length > 0) {
+      // Fetch missing products one by one or in bulk if API supports it
+      // For now, let's try to fetch them to improve the UI
+      missingSlugs.forEach(async (slug) => {
+        try {
+          const res = await fetch(`/api/products?search=${encodeURIComponent(slug)}&per_page=1`);
+          const data = await res.json();
+          if (Array.isArray(data) && data[0]) {
+            setExtraProducts(prev => {
+              if (prev.some(p => p.id === data[0].id)) return prev;
+              return [...prev, data[0]];
+            });
+          }
+        } catch (error) {
+          console.error("Error fetching missing product:", error);
+        }
+      });
+    }
+  }, [html, products.length]);
+
+  const parts = processedHtml.split(/(___PRODUCT_THUMBNAIL_\d+___)/g);
+  
+  const elements = parts.map((part, index) => {
+    const match = part.match(/___PRODUCT_THUMBNAIL_(\d+)___/);
+    if (match) {
+      const productId = parseInt(match[1]);
+      const linkedProduct = allKnownProducts.find(p => p.id === productId);
       if (linkedProduct) {
-        elements.push(
+        return (
           <div 
-            key={`product-${i}`}
+            key={`product-thumb-${index}`}
             onClick={() => onProductClick(linkedProduct)}
-            className="inline-flex items-center gap-3 p-2 bg-gray-50 border border-gray-100 rounded-xl hover:border-red-200 hover:bg-red-50 transition-all cursor-pointer my-2 group"
+            className="flex items-center gap-4 p-3 bg-white border border-gray-100 rounded-2xl hover:border-red-200 hover:shadow-lg hover:shadow-red-50/50 transition-all cursor-pointer my-4 group w-full max-w-md"
           >
-            <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0">
+            <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-gray-50">
               <img 
                 src={linkedProduct.images[0]?.src || "https://picsum.photos/seed/safety/200"} 
                 alt={linkedProduct.name}
-                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                 referrerPolicy="no-referrer"
               />
             </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-red-600 font-bold uppercase tracking-wider leading-none mb-1">منتج ذو صلة</span>
-              <span className="text-xs font-bold text-gray-900 leading-tight">{linkedProduct.name}</span>
-              <span className="text-[10px] text-gray-500 font-medium">{linkedProduct.price} ر.س</span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] text-red-600 font-bold uppercase tracking-widest leading-none mb-1.5 flex items-center gap-1">
+                <div className="w-1 h-1 rounded-full bg-red-600 animate-pulse"></div>
+                منتج ذو صلة
+              </span>
+              <span className="text-sm font-bold text-gray-900 leading-tight truncate mb-1">{linkedProduct.name}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-red-600">{linkedProduct.price} ر.س</span>
+                <span className="text-[10px] text-gray-400 font-medium">عرض التفاصيل ←</span>
+              </div>
             </div>
           </div>
         );
-      } else {
-        // If not found, just render the original link
-        elements.push(<a key={`link-${i}`} href={href} target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline" dangerouslySetInnerHTML={{ __html: linkText }} />);
       }
     }
-  }
-  
-  return <div className="prose prose-sm text-gray-600 mb-10 leading-relaxed">{elements}</div>;
+    return <span key={`html-part-${index}`} dangerouslySetInnerHTML={{ __html: part }} />;
+  });
+
+  return <div className="prose prose-sm text-gray-600 mb-10 leading-relaxed max-w-none">{elements}</div>;
 }
 
 function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onToggleFavorite, allProducts, onProductClick }: { 

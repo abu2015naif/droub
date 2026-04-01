@@ -138,7 +138,12 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     try {
       const response = await fetch("/api/shipping/methods");
       const data = await response.json();
-      setShippingMethods(data);
+      if (Array.isArray(data)) {
+        setShippingMethods(data);
+      } else {
+        console.error("Shipping methods data is not an array:", data);
+        setShippingMethods([]);
+      }
     } catch (error) {
       console.error("Error fetching shipping methods:", error);
     }
@@ -148,7 +153,12 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     try {
       const response = await fetch("/api/shipping/zones");
       const data = await response.json();
-      setShippingZones(data);
+      if (Array.isArray(data)) {
+        setShippingZones(data);
+      } else {
+        console.error("Shipping zones data is not an array:", data);
+        setShippingZones([]);
+      }
     } catch (error) {
       console.error("Error fetching shipping zones:", error);
     }
@@ -227,7 +237,12 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     try {
       const response = await fetch("/api/products?per_page=100");
       const data = await response.json();
-      setProducts(data);
+      if (Array.isArray(data)) {
+        setProducts(data);
+      } else {
+        console.error("Products data is not an array:", data);
+        setProducts([]);
+      }
     } catch (error) {
       console.error("Error fetching products:", error);
     }
@@ -237,7 +252,12 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     try {
       const response = await fetch("/api/categories");
       const data = await response.json();
-      setCategories(data);
+      if (Array.isArray(data)) {
+        setCategories(data);
+      } else {
+        console.error("Categories data is not an array:", data);
+        setCategories([]);
+      }
     } catch (error) {
       console.error("Error fetching categories:", error);
     }
