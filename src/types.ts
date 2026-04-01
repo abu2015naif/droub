@@ -43,6 +43,9 @@ export interface Category {
 
 export interface CartItem extends Product {
   quantity: number;
+  selectedAttributes?: {
+    [key: string]: string;
+  };
 }
 
 export interface Banner {

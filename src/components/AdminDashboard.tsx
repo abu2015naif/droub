@@ -398,7 +398,11 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
             quantity: li.quantity,
             price: li.price,
             sku: li.sku,
-            images: [] 
+            images: [],
+            selectedAttributes: li.meta_data ? li.meta_data.reduce((acc: any, meta: any) => {
+              acc[meta.key] = meta.value;
+              return acc;
+            }, {}) : {}
           })),
           line_items: o.line_items
         }));
@@ -2013,6 +2017,15 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                       </div>
                       <div className="flex-1">
                         <p className="font-bold text-gray-800">{item.name}</p>
+                        {item.selectedAttributes && Object.entries(item.selectedAttributes).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {Object.entries(item.selectedAttributes).map(([name, value]) => (
+                              <span key={name} className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
+                                {name}: {value}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         <div className="flex gap-4 mt-1">
                           <p className="text-xs text-gray-500">الكمية: <span className="font-bold text-gray-700">{item.quantity}</span></p>
                           <p className="text-xs text-gray-500">السعر: <span className="font-bold text-gray-700">{item.price} ر.س</span></p>

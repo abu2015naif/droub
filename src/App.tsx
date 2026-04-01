@@ -131,6 +131,7 @@ export default function App() {
   const [bankAccounts, setBankAccounts] = useState<BankDetails[]>([]);
   const [homeSettings, setHomeSettings] = useState<{ productsPerPage: number }>({ productsPerPage: 8 });
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+  const [paymentGateways, setPaymentGateways] = useState<any[]>([]);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Save favorites to localStorage whenever it changes
@@ -172,6 +173,23 @@ export default function App() {
       }
     };
     fetchFeatured();
+  }, []);
+
+  useEffect(() => {
+    const fetchPaymentGateways = async () => {
+      try {
+        const res = await fetch("/api/payment-gateways");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setPaymentGateways(data);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching payment gateways:", error);
+      }
+    };
+    fetchPaymentGateways();
   }, []);
 
   useEffect(() => {
@@ -415,24 +433,33 @@ export default function App() {
     return sorted;
   }, [products, isUsingSampleData, sortBy, sortOrder]);
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, selectedAttributes?: { [key: string]: string }) => {
     setCart(prev => {
-      const existing = prev.find(item => item.id === product.id);
+      const existing = prev.find(item => 
+        item.id === product.id && 
+        JSON.stringify(item.selectedAttributes || {}) === JSON.stringify(selectedAttributes || {})
+      );
       if (existing) {
-        return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+        return prev.map(item => 
+          (item.id === product.id && JSON.stringify(item.selectedAttributes || {}) === JSON.stringify(selectedAttributes || {}))
+            ? { ...item, quantity: item.quantity + 1 } 
+            : item
+        );
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return [...prev, { ...product, quantity: 1, selectedAttributes }];
     });
     setIsCartOpen(true);
   };
 
-  const removeFromCart = (productId: number) => {
-    setCart(prev => prev.filter(item => item.id !== productId));
+  const removeFromCart = (productId: number, selectedAttributes?: { [key: string]: string }) => {
+    setCart(prev => prev.filter(item => 
+      !(item.id === productId && JSON.stringify(item.selectedAttributes || {}) === JSON.stringify(selectedAttributes || {}))
+    ));
   };
 
-  const updateQuantity = (productId: number, delta: number) => {
+  const updateQuantity = (productId: number, delta: number, selectedAttributes?: { [key: string]: string }) => {
     setCart(prev => prev.map(item => {
-      if (item.id === productId) {
+      if (item.id === productId && JSON.stringify(item.selectedAttributes || {}) === JSON.stringify(selectedAttributes || {})) {
         const newQty = Math.max(1, item.quantity + delta);
         return { ...item, quantity: newQty };
       }
@@ -549,7 +576,11 @@ export default function App() {
         },
         line_items: cart.map(item => ({
           product_id: item.id,
-          quantity: item.quantity
+          quantity: item.quantity,
+          meta_data: item.selectedAttributes ? Object.entries(item.selectedAttributes).map(([key, value]) => ({
+            key,
+            value
+          })) : []
         })),
         shipping_lines: selectedShipping ? [
           {
@@ -942,7 +973,14 @@ export default function App() {
                             <p className="text-red-600 font-bold mt-1">{product.price} ر.س</p>
                             <div className="flex items-center gap-3 mt-2">
                               <button 
-                                onClick={() => addToCart(product)}
+                                onClick={() => {
+                                  if (product.attributes && product.attributes.length > 0) {
+                                    setSelectedProduct(product);
+                                    setIsFavoritesOpen(false);
+                                  } else {
+                                    addToCart(product);
+                                  }
+                                }}
                                 className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-red-600 transition-colors flex items-center gap-1"
                               >
                                 <ShoppingCart size={14} /> أضف للسلة
@@ -1008,35 +1046,44 @@ export default function App() {
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-6">
-                    {cart.map(item => (
-                      <div key={item.id} className="flex gap-4">
-                        <img 
-                          src={item.images[0]?.src || "https://picsum.photos/seed/safety/200"} 
-                          alt={item.name}
-                          className="w-20 h-20 object-cover rounded-lg bg-gray-100"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="flex-1">
-                          <h3 className="font-medium text-sm line-clamp-2">{item.name}</h3>
-                          <p className="text-red-600 font-bold mt-1">{item.price} ر.س</p>
-                          <div className="flex items-center gap-3 mt-2">
-                            <div className="flex items-center border rounded-md">
-                              <button onClick={() => updateQuantity(item.id, -1)} className="px-2 py-1 hover:bg-gray-50">-</button>
-                              <span className="px-3 py-1 text-sm border-x">{item.quantity}</span>
-                              <button onClick={() => updateQuantity(item.id, 1)} className="px-2 py-1 hover:bg-gray-50">+</button>
+                    <div className="space-y-6">
+                      {cart.map((item, index) => (
+                        <div key={`${item.id}-${index}`} className="flex gap-4">
+                          <img 
+                            src={item.images[0]?.src || "https://picsum.photos/seed/safety/200"} 
+                            alt={item.name}
+                            className="w-20 h-20 object-cover rounded-lg bg-gray-100"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="flex-1">
+                            <h3 className="font-medium text-sm line-clamp-2">{item.name}</h3>
+                            {item.selectedAttributes && Object.entries(item.selectedAttributes).length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {Object.entries(item.selectedAttributes).map(([name, value]) => (
+                                  <span key={name} className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
+                                    {name}: {value}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            <p className="text-red-600 font-bold mt-1">{item.price} ر.س</p>
+                            <div className="flex items-center gap-3 mt-2">
+                              <div className="flex items-center border rounded-md">
+                                <button onClick={() => updateQuantity(item.id, -1, item.selectedAttributes)} className="px-2 py-1 hover:bg-gray-50">-</button>
+                                <span className="px-3 py-1 text-sm border-x">{item.quantity}</span>
+                                <button onClick={() => updateQuantity(item.id, 1, item.selectedAttributes)} className="px-2 py-1 hover:bg-gray-50">+</button>
+                              </div>
+                              <button 
+                                onClick={() => removeFromCart(item.id, item.selectedAttributes)}
+                                className="text-xs text-gray-400 hover:text-red-600"
+                              >
+                                حذف
+                              </button>
                             </div>
-                            <button 
-                              onClick={() => removeFromCart(item.id)}
-                              className="text-xs text-gray-400 hover:text-red-600"
-                            >
-                              حذف
-                            </button>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
                 )}
               </div>
 
@@ -1076,9 +1123,10 @@ export default function App() {
             loading={checkoutLoading}
             onBack={() => setActiveTab("shop")}
             shippingMethods={shippingMethods}
-            onRemoveItem={removeFromCart}
+            onRemoveItem={(id, attrs) => removeFromCart(id, attrs)}
             showrooms={showrooms}
             bankAccounts={bankAccounts}
+            paymentGateways={paymentGateways}
           />
         ) : activeTab === "home" ? (
           <>
@@ -1661,7 +1709,7 @@ export default function App() {
 
 interface ProductCardProps {
   product: Product;
-  onAddToCart: (p: Product) => void;
+  onAddToCart: (p: Product, selectedAttributes?: { [key: string]: string }) => void;
   isFavorite: boolean;
   onToggleFavorite: () => void;
   onView?: (p: Product) => void;
@@ -1883,7 +1931,14 @@ function ProductCard({ product, onAddToCart, isFavorite, onToggleFavorite, onVie
             <span className="text-xl font-black text-red-700">{product.price} ر.س</span>
           </div>
           <button 
-            onClick={(e) => { e.stopPropagation(); onAddToCart(product); }}
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              if (product.attributes && product.attributes.length > 0) {
+                onView?.(product);
+              } else {
+                onAddToCart(product); 
+              }
+            }}
             className="bg-gray-900 text-white p-3 rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-gray-200"
           >
             <ShoppingCart size={20} />
@@ -1931,9 +1986,10 @@ interface CheckoutPageProps {
   loading: boolean;
   onBack: () => void;
   shippingMethods: any[];
-  onRemoveItem: (id: number) => void;
+  onRemoveItem: (id: number, selectedAttributes?: { [key: string]: string }) => void;
   showrooms: Showroom[];
   bankAccounts: BankDetails[];
+  paymentGateways: any[];
 }
 
 function CheckoutPage({ 
@@ -1946,7 +2002,8 @@ function CheckoutPage({
   shippingMethods, 
   onRemoveItem,
   showrooms,
-  bankAccounts
+  bankAccounts,
+  paymentGateways
 }: CheckoutPageProps) {
   const [formData, setFormData] = useState({
     firstName: user?.displayName?.split(' ')[0] || '',
@@ -1960,7 +2017,13 @@ function CheckoutPage({
   });
 
   const [selectedShipping, setSelectedShipping] = useState<any>(null);
-  const [paymentMethod, setPaymentMethod] = useState<string>("telr");
+  const [paymentMethod, setPaymentMethod] = useState<string>(() => {
+    if (paymentGateways.find(g => g.id === 'telr' && g.enabled)) return "telr";
+    if (paymentGateways.find(g => g.id === 'applepay' && g.enabled)) return "applepay";
+    if (paymentGateways.find(g => g.id === 'cod' && g.enabled)) return "cod";
+    if (paymentGateways.find(g => g.id === 'bacs' && g.enabled)) return "bank_transfer";
+    return "telr";
+  });
   const [isApplePaySupported, setIsApplePaySupported] = useState(false);
 
   useEffect(() => {
@@ -1968,6 +2031,18 @@ function CheckoutPage({
       setIsApplePaySupported(true);
     }
   }, []);
+  useEffect(() => {
+    if (paymentGateways.length > 0) {
+      const isCurrentEnabled = paymentGateways.find(g => (g.id === paymentMethod || (paymentMethod === 'bank_transfer' && g.id === 'bacs')) && g.enabled);
+      if (!isCurrentEnabled) {
+        if (paymentGateways.find(g => g.id === 'telr' && g.enabled)) setPaymentMethod("telr");
+        else if (paymentGateways.find(g => g.id === 'applepay' && g.enabled)) setPaymentMethod("applepay");
+        else if (paymentGateways.find(g => g.id === 'cod' && g.enabled)) setPaymentMethod("cod");
+        else if (paymentGateways.find(g => g.id === 'bacs' && g.enabled)) setPaymentMethod("bank_transfer");
+      }
+    }
+  }, [paymentGateways]);
+
   const [isCompany, setIsCompany] = useState(false);
   const [companyInfo, setCompanyInfo] = useState({
     name: '',
@@ -2298,22 +2373,24 @@ function CheckoutPage({
             <div className="bg-white border border-gray-100 rounded-3xl p-8 shadow-sm space-y-6">
               <h3 className="text-xl font-bold border-b pb-4">طريقة الدفع</h3>
               <div className="space-y-3">
-                <div 
-                  onClick={() => setPaymentMethod("telr")}
-                  className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "telr" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
-                >
-                  <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "telr" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
-                  <div className="flex-1">
-                    <p className="font-bold">بطاقة مدى / فيزا / ماستركارد</p>
-                    <p className="text-xs text-gray-500">دفع آمن عبر بوابة Telr</p>
+                {paymentGateways.find(g => g.id === 'telr' && g.enabled) && (
+                  <div 
+                    onClick={() => setPaymentMethod("telr")}
+                    className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "telr" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
+                  >
+                    <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "telr" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
+                    <div className="flex-1">
+                      <p className="font-bold">بطاقة مدى / فيزا / ماستركارد</p>
+                      <p className="text-xs text-gray-500">دفع آمن عبر بوابة Telr</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" className="h-4" alt="Visa" referrerPolicy="no-referrer" />
+                      <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" className="h-4" alt="Mastercard" referrerPolicy="no-referrer" />
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" className="h-4" alt="Visa" referrerPolicy="no-referrer" />
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" className="h-4" alt="Mastercard" referrerPolicy="no-referrer" />
-                  </div>
-                </div>
+                )}
 
-                {isApplePaySupported && (
+                {isApplePaySupported && paymentGateways.find(g => g.id === 'telr' && g.enabled) && (
                   <div 
                     onClick={() => setPaymentMethod("applepay")}
                     className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "applepay" ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
@@ -2329,104 +2406,108 @@ function CheckoutPage({
                   </div>
                 )}
 
-                <div 
-                  onClick={() => setPaymentMethod("cod")}
-                  className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "cod" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
-                >
-                  <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "cod" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
-                  <div>
-                    <p className="font-bold">الدفع عند الاستلام (COD)</p>
-                    <p className="text-xs text-gray-500">ادفع نقداً عند استلام طلبك من مندوب التوصيل</p>
-                  </div>
-                </div>
-
-                <div 
-                  onClick={() => setPaymentMethod("bank_transfer")}
-                  className={`flex flex-col gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "bank_transfer" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "bank_transfer" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
-                    <div className="flex-1">
-                      <p className="font-bold">حوالة بنكية</p>
-                      <p className="text-xs text-gray-500">قم بالتحويل للحساب البنكي وارفع إيصال التحويل</p>
+                {paymentGateways.find(g => g.id === 'cod' && g.enabled) && (
+                  <div 
+                    onClick={() => setPaymentMethod("cod")}
+                    className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "cod" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
+                  >
+                    <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "cod" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
+                    <div>
+                      <p className="font-bold">الدفع عند الاستلام (COD)</p>
+                      <p className="text-xs text-gray-500">ادفع نقداً عند استلام طلبك من مندوب التوصيل</p>
                     </div>
-                    <CreditCard className="text-gray-400" />
                   </div>
+                )}
 
-                  {paymentMethod === "bank_transfer" && (
-                    <div className="mt-4 p-4 bg-white rounded-xl border border-red-100 space-y-4 animate-in fade-in slide-in-from-top-2">
-                      <div className="space-y-3">
-                        <label className="text-sm font-bold text-gray-600">اختر الحساب البنكي للتحويل</label>
-                        <div className="grid grid-cols-1 gap-3">
-                          {bankAccounts.filter(b => b.active).map(account => (
-                            <div 
-                              key={account.id}
-                              onClick={() => setSelectedBankAccount(account)}
-                              className={`p-4 border-2 rounded-2xl cursor-pointer transition-all ${selectedBankAccount?.id === account.id ? 'border-red-600 bg-red-50' : 'border-gray-100 hover:border-gray-200'}`}
-                            >
-                              <div className="flex justify-between items-center mb-2">
-                                <p className="font-bold text-red-700">{account.bankName}</p>
-                                <div className={`w-5 h-5 rounded-full border-4 ${selectedBankAccount?.id === account.id ? 'border-red-600 bg-white' : 'border-gray-200 bg-white'}`} />
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                                <div>
-                                  <p className="text-gray-500">اسم الحساب:</p>
-                                  <p className="font-bold">{account.accountName}</p>
-                                </div>
-                                <div>
-                                  <p className="text-gray-500">رقم الحساب:</p>
-                                  <p className="font-bold">{account.accountNumber}</p>
-                                </div>
-                                <div className="md:col-span-2">
-                                  <p className="text-gray-500">الآيبان (IBAN):</p>
-                                  <p className="font-bold">{account.iban}</p>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                {paymentGateways.find(g => g.id === 'bacs' && g.enabled) && (
+                  <div 
+                    onClick={() => setPaymentMethod("bank_transfer")}
+                    className={`flex flex-col gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "bank_transfer" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "bank_transfer" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
+                      <div className="flex-1">
+                        <p className="font-bold">حوالة بنكية</p>
+                        <p className="text-xs text-gray-500">قم بالتحويل للحساب البنكي وارفع إيصال التحويل</p>
                       </div>
+                      <CreditCard className="text-gray-400" />
+                    </div>
 
-                      <div className="space-y-3 pt-4 border-t border-gray-50">
-                        <div className="space-y-1">
-                          <label className="text-xs font-bold text-gray-600">اسم صاحب الحساب المحول منه</label>
-                          <input 
-                            value={receiptHolderName}
-                            onChange={e => setReceiptHolderName(e.target.value)}
-                            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
-                            placeholder="أدخل الاسم الثلاثي"
-                          />
+                    {paymentMethod === "bank_transfer" && (
+                      <div className="mt-4 p-4 bg-white rounded-xl border border-red-100 space-y-4 animate-in fade-in slide-in-from-top-2">
+                        <div className="space-y-3">
+                          <label className="text-sm font-bold text-gray-600">اختر الحساب البنكي للتحويل</label>
+                          <div className="grid grid-cols-1 gap-3">
+                            {bankAccounts.filter(b => b.active).map(account => (
+                              <div 
+                                key={account.id}
+                                onClick={() => setSelectedBankAccount(account)}
+                                className={`p-4 border-2 rounded-2xl cursor-pointer transition-all ${selectedBankAccount?.id === account.id ? 'border-red-600 bg-red-50' : 'border-gray-100 hover:border-gray-200'}`}
+                              >
+                                <div className="flex justify-between items-center mb-2">
+                                  <p className="font-bold text-red-700">{account.bankName}</p>
+                                  <div className={`w-5 h-5 rounded-full border-4 ${selectedBankAccount?.id === account.id ? 'border-red-600 bg-white' : 'border-gray-200 bg-white'}`} />
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                  <div>
+                                    <p className="text-gray-500">اسم الحساب:</p>
+                                    <p className="font-bold">{account.accountName}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-gray-500">رقم الحساب:</p>
+                                    <p className="font-bold">{account.accountNumber}</p>
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <p className="text-gray-500">الآيبان (IBAN):</p>
+                                    <p className="font-bold">{account.iban}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <div className="space-y-1">
-                          <label className="text-xs font-bold text-gray-600">إرفاق إيصال التحويل (صورة أو PDF)</label>
-                          <div className="relative">
+
+                        <div className="space-y-3 pt-4 border-t border-gray-50">
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-gray-600">اسم صاحب الحساب المحول منه</label>
                             <input 
-                              type="file"
-                              accept="image/*,.pdf"
-                              onChange={handleFileChange}
-                              className="hidden"
-                              id="receipt-upload"
+                              value={receiptHolderName}
+                              onChange={e => setReceiptHolderName(e.target.value)}
+                              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
+                              placeholder="أدخل الاسم الثلاثي"
                             />
-                            <label 
-                              htmlFor="receipt-upload"
-                              className="flex items-center justify-center gap-2 w-full bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg py-4 cursor-pointer hover:bg-gray-100 transition-all"
-                            >
-                              {receiptFile ? (
-                                <span className="text-green-600 font-bold flex items-center gap-2">
-                                  <ShieldCheck size={16} /> تم اختيار الملف
-                                </span>
-                              ) : (
-                                <span className="text-gray-400 flex items-center gap-2">
-                                  <Upload size={16} /> اضغط لرفع الملف
-                                </span>
-                              )}
-                            </label>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-gray-600">إرفاق إيصال التحويل (صورة أو PDF)</label>
+                            <div className="relative">
+                              <input 
+                                type="file"
+                                accept="image/*,.pdf"
+                                onChange={handleFileChange}
+                                className="hidden"
+                                id="receipt-upload"
+                              />
+                              <label 
+                                htmlFor="receipt-upload"
+                                className="flex items-center justify-center gap-2 w-full bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg py-4 cursor-pointer hover:bg-gray-100 transition-all"
+                              >
+                                {receiptFile ? (
+                                  <span className="text-green-600 font-bold flex items-center gap-2">
+                                    <ShieldCheck size={16} /> تم اختيار الملف
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400 flex items-center gap-2">
+                                    <Upload size={16} /> اضغط لرفع الملف
+                                  </span>
+                                )}
+                              </label>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2447,16 +2528,25 @@ function CheckoutPage({
             <h3 className="text-xl font-bold mb-8 border-b border-white/10 pb-4">ملخص الطلب</h3>
             
             <div className="space-y-6 mb-8 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-              {cart.map(item => (
-                <div key={item.id} className="flex gap-4">
+              {cart.map((item, index) => (
+                <div key={`${item.id}-${index}`} className="flex gap-4">
                   <div className="w-16 h-16 bg-white/10 rounded-xl overflow-hidden shrink-0">
                     <img src={item.images[0]?.src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-bold line-clamp-1">{item.name}</p>
+                    {item.selectedAttributes && Object.entries(item.selectedAttributes).length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {Object.entries(item.selectedAttributes).map(([name, value]) => (
+                          <span key={name} className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400">
+                            {name}: {value}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <p className="text-xs text-gray-400">{item.quantity} × {item.price} ر.س</p>
                     <button 
-                      onClick={() => onRemoveItem(item.id)}
+                      onClick={() => onRemoveItem(item.id, item.selectedAttributes)}
                       className="text-[10px] text-red-500 hover:underline mt-1"
                     >
                       حذف
@@ -2637,12 +2727,46 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
   product: Product | null, 
   isOpen: boolean, 
   onClose: () => void,
-  onAddToCart: (p: Product) => void,
+  onAddToCart: (p: Product, selectedAttributes?: { [key: string]: string }) => void,
   isFavorite: boolean,
   onToggleFavorite: () => void,
   allProducts: Product[],
   onProductClick: (p: Product) => void
 }) {
+  const [selectedAttributes, setSelectedAttributes] = useState<{ [key: string]: string }>({});
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  useEffect(() => {
+    setCurrentImageIndex(0);
+    if (product && product.attributes) {
+      const initialAttrs: { [key: string]: string } = {};
+      product.attributes.forEach(attr => {
+        if (attr.options && attr.options.length > 0) {
+          initialAttrs[attr.name] = attr.options[0];
+        }
+      });
+      setSelectedAttributes(initialAttrs);
+    } else {
+      setSelectedAttributes({});
+    }
+  }, [product]);
+
+  // Switch image based on attribute selection
+  useEffect(() => {
+    if (product && product.images && product.images.length > 1 && Object.keys(selectedAttributes).length > 0) {
+      const selectedValues = Object.values(selectedAttributes).map(v => (v as string).toLowerCase());
+      const matchingImageIndex = product.images.findIndex(img => 
+        selectedValues.some(val => 
+          (img.name && img.name.toLowerCase().includes(val)) || 
+          (img.alt && img.alt.toLowerCase().includes(val))
+        )
+      );
+      if (matchingImageIndex !== -1) {
+        setCurrentImageIndex(matchingImageIndex);
+      }
+    }
+  }, [selectedAttributes, product]);
+
   if (!product) return null;
 
   return (
@@ -2660,31 +2784,50 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="fixed inset-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-4xl bg-white z-[70] rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row"
+            className="fixed inset-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-3xl md:max-h-[90vh] bg-white z-[70] rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row"
           >
             <button 
               onClick={onClose}
-              className="absolute top-4 right-4 p-2 bg-white/80 backdrop-blur-md rounded-full shadow-lg z-10 hover:bg-red-600 hover:text-white transition-all"
+              className="absolute top-4 right-4 p-2 bg-white/80 backdrop-blur-md rounded-full shadow-lg z-20 hover:bg-red-600 hover:text-white transition-all"
             >
               <X size={20} />
             </button>
 
-            <div className="w-full md:w-1/2 h-64 md:h-auto relative bg-gray-50">
-              <img 
-                src={product.images[0]?.src || "https://picsum.photos/seed/safety/800"} 
-                alt={product.name}
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-              <button 
-                onClick={onToggleFavorite}
-                className={`absolute top-4 left-4 p-3 rounded-full shadow-xl transition-all ${isFavorite ? "bg-red-600 text-white" : "bg-white text-gray-400 hover:text-red-600"}`}
-              >
-                <Heart size={24} fill={isFavorite ? "currentColor" : "none"} />
-              </button>
+            <div className="w-full md:w-1/2 h-80 md:h-auto relative bg-gray-50 flex flex-col">
+              <div className="flex-1 relative overflow-hidden">
+                <img 
+                  src={product.images[currentImageIndex]?.src || "https://picsum.photos/seed/safety/800"} 
+                  alt={product.name}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+                <button 
+                  onClick={onToggleFavorite}
+                  className={`absolute top-4 left-4 p-3 rounded-full shadow-xl transition-all z-10 ${isFavorite ? "bg-red-600 text-white" : "bg-white text-gray-400 hover:text-red-600"}`}
+                >
+                  <Heart size={24} fill={isFavorite ? "currentColor" : "none"} />
+                </button>
+              </div>
+              
+              {/* Image Gallery Thumbnails */}
+              {product.images && product.images.length > 1 && (
+                <div className="p-4 bg-white/50 backdrop-blur-sm flex gap-2 overflow-x-auto no-scrollbar">
+                  {product.images.map((img, idx) => (
+                    <button
+                      key={img.id || idx}
+                      onClick={() => setCurrentImageIndex(idx)}
+                      className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition-all shrink-0 ${
+                        currentImageIndex === idx ? "border-red-600 scale-105" : "border-transparent opacity-60 hover:opacity-100"
+                      }`}
+                    >
+                      <img src={img.src} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="flex-1 p-8 md:p-12 overflow-y-auto">
+            <div className="flex-1 p-6 md:p-10 overflow-y-auto">
               <div className="text-sm text-red-600 font-bold mb-2 uppercase tracking-wider">
                 {product.categories[0]?.name}
               </div>
@@ -2703,6 +2846,32 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                 )}
               </div>
 
+              {/* Attributes Selection */}
+              {product.attributes && product.attributes.length > 0 && (
+                <div className="space-y-6 mb-8">
+                  {product.attributes.map(attr => (
+                    <div key={attr.id || attr.name} className="space-y-3">
+                      <label className="text-sm font-bold text-gray-700">{attr.name}</label>
+                      <div className="flex flex-wrap gap-2">
+                        {attr.options.map(option => (
+                          <button
+                            key={option}
+                            onClick={() => setSelectedAttributes(prev => ({ ...prev, [attr.name]: option }))}
+                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border-2 ${
+                              selectedAttributes[attr.name] === option
+                                ? "border-red-600 bg-red-50 text-red-600"
+                                : "border-gray-100 bg-gray-50 text-gray-500 hover:border-gray-200"
+                            }`}
+                          >
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <ProductDescription 
                 html={product.description} 
                 products={allProducts} 
@@ -2711,14 +2880,15 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
 
               <div className="flex flex-col sm:flex-row gap-4">
                 <button 
-                  onClick={() => { onAddToCart(product); onClose(); }}
+                  onClick={() => { onAddToCart(product, selectedAttributes); onClose(); }}
                   className="flex-1 bg-gray-900 text-white py-4 rounded-2xl font-bold text-lg hover:bg-red-600 transition-all shadow-xl shadow-gray-200 flex items-center justify-center gap-3"
                 >
                   <ShoppingCart size={24} /> أضف للسلة
                 </button>
                 <button 
                   onClick={() => {
-                    const message = `السلام عليكم، أرغب في الاستفسار عن منتج: ${product.name}\nالسعر: ${product.price} ر.س\nالرابط: ${window.location.origin}/?product=${product.id}`;
+                    const attrText = Object.entries(selectedAttributes).map(([k, v]) => `${k}: ${v}`).join(', ');
+                    const message = `السلام عليكم، أرغب في الاستفسار عن منتج: ${product.name}\n${attrText ? `الخيارات المختارة: ${attrText}\n` : ''}السعر: ${product.price} ر.س\nالرابط: ${window.location.origin}/?product=${product.id}`;
                     window.open(`https://wa.me/966580410063?text=${encodeURIComponent(message)}`, '_blank');
                   }}
                   className="flex-1 bg-green-500 text-white py-4 rounded-2xl font-bold text-lg hover:bg-green-600 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-3"
