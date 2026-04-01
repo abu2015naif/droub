@@ -15,6 +15,7 @@ export const SAMPLE_PRODUCTS: Product[] = [
     images: [{ id: 1, src: "https://picsum.photos/seed/fire1/800", name: "طفاية", alt: "طفاية" }],
     categories: [{ id: 1, name: "أدوات السلامة", slug: "safety" }],
     stock_status: "instock",
+    featured: false,
     attributes: []
   },
   {
@@ -31,6 +32,7 @@ export const SAMPLE_PRODUCTS: Product[] = [
     images: [{ id: 2, src: "https://picsum.photos/seed/helmet/800", name: "خوذة", alt: "خوذة" }],
     categories: [{ id: 1, name: "أدوات السلامة", slug: "safety" }],
     stock_status: "instock",
+    featured: false,
     attributes: []
   },
   {
@@ -47,6 +49,7 @@ export const SAMPLE_PRODUCTS: Product[] = [
     images: [{ id: 3, src: "https://picsum.photos/seed/vest/800", name: "سترة", alt: "سترة" }],
     categories: [{ id: 1, name: "أدوات السلامة", slug: "safety" }],
     stock_status: "instock",
+    featured: false,
     attributes: []
   },
   {
@@ -63,6 +66,7 @@ export const SAMPLE_PRODUCTS: Product[] = [
     images: [{ id: 4, src: "https://picsum.photos/seed/aid/800", name: "حقيبة إسعافات", alt: "حقيبة إسعافات" }],
     categories: [{ id: 1, name: "أدوات السلامة", slug: "safety" }],
     stock_status: "instock",
+    featured: false,
     attributes: []
   },
   {
@@ -79,6 +83,7 @@ export const SAMPLE_PRODUCTS: Product[] = [
     images: [{ id: 5, src: "https://picsum.photos/seed/shoes/800", name: "حذاء سلامة", alt: "حذاء سلامة" }],
     categories: [{ id: 1, name: "أدوات السلامة", slug: "safety" }],
     stock_status: "instock",
+    featured: false,
     attributes: []
   },
   {
@@ -95,6 +100,7 @@ export const SAMPLE_PRODUCTS: Product[] = [
     images: [{ id: 6, src: "https://picsum.photos/seed/gloves/800", name: "قفازات", alt: "قفازات" }],
     categories: [{ id: 1, name: "أدوات السلامة", slug: "safety" }],
     stock_status: "instock",
+    featured: false,
     attributes: []
   }
 ];

@@ -90,6 +90,8 @@ export default function App() {
   }, [recentlyViewed]);
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [sortBy, setSortBy] = useState<string>("date");
+  const [sortOrder, setSortOrder] = useState<string>("desc");
 
   const addToRecentlyViewed = (product: Product) => {
     setRecentlyViewed(prev => {
@@ -127,12 +129,50 @@ export default function App() {
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [showrooms, setShowrooms] = useState<Showroom[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankDetails[]>([]);
+  const [homeSettings, setHomeSettings] = useState<{ productsPerPage: number }>({ productsPerPage: 8 });
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Save favorites to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem("favorites", JSON.stringify(favorites));
   }, [favorites]);
+
+  useEffect(() => {
+    const homeSettingsRef = doc(db, "settings", "home");
+    const unsubHomeSettings = onSnapshot(homeSettingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setHomeSettings(snapshot.data() as any);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, "settings/home");
+    });
+
+    return () => unsubHomeSettings();
+  }, []);
+
+  useEffect(() => {
+    const isFeatured = (p: any) => p.featured === true || String(p.featured) === "true" || (p.featured as any) === 1 || String(p.featured) === "1";
+    
+    const fetchFeatured = async () => {
+      try {
+        const res = await fetch("/api/products?featured=true&per_page=20");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            const processedData = data.map(p => ({
+              ...p,
+              featured: isFeatured(p)
+            }));
+            setFeaturedProducts(processedData);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching featured products:", error);
+      }
+    };
+    fetchFeatured();
+  }, []);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -266,14 +306,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, [banners.length]);
 
-  const fetchProducts = async (pageNum: number, categoryId: number | null, search: string, append: boolean = false) => {
+  const fetchProducts = async (pageNum: number, categoryId: number | null, search: string, append: boolean = false, orderby: string = sortBy, order: string = sortOrder) => {
     try {
       if (append) setLoadingMore(true);
       else setLoading(true);
 
       const params = new URLSearchParams({
         page: pageNum.toString(),
-        per_page: "20"
+        per_page: "20",
+        orderby: orderby,
+        order: order
       });
       if (categoryId) params.append("category", categoryId.toString());
       if (search) params.append("search", search);
@@ -342,18 +384,36 @@ export default function App() {
 
   useEffect(() => {
     setPage(1);
-    fetchProducts(1, selectedCategory, searchQuery, false);
-  }, [selectedCategory, searchQuery]);
+    fetchProducts(1, selectedCategory, searchQuery, false, sortBy, sortOrder);
+  }, [selectedCategory, searchQuery, sortBy, sortOrder]);
 
   const loadMore = () => {
     if (!loadingMore && hasMore) {
       const nextPage = page + 1;
       setPage(nextPage);
-      fetchProducts(nextPage, selectedCategory, searchQuery, true);
+      fetchProducts(nextPage, selectedCategory, searchQuery, true, sortBy, sortOrder);
     }
   };
 
-  const filteredProducts = products; // We are now filtering via API primarily
+  const filteredProducts = useMemo(() => {
+    if (!isUsingSampleData) return products;
+    
+    const sorted = [...products];
+    if (sortBy === "price") {
+      sorted.sort((a, b) => {
+        const priceA = parseFloat(a.price);
+        const priceB = parseFloat(b.price);
+        return sortOrder === "asc" ? priceA - priceB : priceB - priceA;
+      });
+    } else if (sortBy === "date") {
+      sorted.sort((a, b) => {
+        const dateA = new Date(a.date_created || "").getTime();
+        const dateB = new Date(b.date_created || "").getTime();
+        return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+      });
+    }
+    return sorted;
+  }, [products, isUsingSampleData, sortBy, sortOrder]);
 
   const addToCart = (product: Product) => {
     setCart(prev => {
@@ -1117,9 +1177,9 @@ export default function App() {
               {/* Slider Controls */}
               {banners.length > 1 && (
                 <div className="absolute bottom-8 right-8 flex gap-2 z-10">
-                  {banners.map((_, i) => (
+                  {banners.map((banner, i) => (
                     <button
-                      key={i}
+                      key={banner.id}
                       onClick={() => setCurrentBannerIndex(i)}
                       className={`w-3 h-3 rounded-full transition-all ${i === currentBannerIndex ? 'bg-red-600 w-8' : 'bg-white/30 hover:bg-white/50'}`}
                     />
@@ -1169,6 +1229,33 @@ export default function App() {
               </div>
             </section>
 
+            {/* Featured Products */}
+            {featuredProducts.length > 0 && (
+              <section className="py-20 bg-white">
+                <div className="max-w-7xl mx-auto px-4">
+                  <div className="flex justify-between items-center mb-12">
+                    <h2 className="text-3xl font-bold">منتجات مميزة</h2>
+                    <button onClick={() => setActiveTab("shop")} className="text-red-600 font-bold hover:underline">عرض الكل</button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
+                    {featuredProducts.map((product) => (
+                      <ProductCard 
+                        key={product.id} 
+                        product={product} 
+                        onAddToCart={addToCart} 
+                        isFavorite={favorites.includes(product.id)}
+                        onToggleFavorite={() => toggleFavorite(product.id)}
+                        onView={(p) => {
+                          setSelectedProduct(p);
+                          addToRecentlyViewed(p);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
+
             {/* Latest Products */}
             <section className="py-20 bg-gray-50">
               <div className="max-w-7xl mx-auto px-4">
@@ -1176,8 +1263,8 @@ export default function App() {
                   <h2 className="text-3xl font-bold">أحدث المنتجات</h2>
                   <button onClick={() => setActiveTab("shop")} className="text-red-600 font-bold hover:underline">عرض الكل</button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                  {products.slice(0, 4).map((product) => (
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
+                  {products.slice(0, homeSettings.productsPerPage).map((product) => (
                     <ProductCard 
                       key={product.id} 
                       product={product} 
@@ -1201,8 +1288,8 @@ export default function App() {
                   <h2 className="text-3xl font-bold">الأكثر مبيعاً</h2>
                   <button onClick={() => setActiveTab("shop")} className="text-red-600 font-bold hover:underline">عرض الكل</button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                  {products.slice(4, 8).map((product) => (
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
+                  {products.slice(homeSettings.productsPerPage, homeSettings.productsPerPage * 2).map((product) => (
                     <ProductCard 
                       key={product.id} 
                       product={product} 
@@ -1227,7 +1314,7 @@ export default function App() {
                     <h2 className="text-3xl font-bold">منتجات شاهدتها مؤخراً</h2>
                     <button onClick={() => setRecentlyViewed([])} className="text-gray-400 text-sm hover:text-red-600 transition-colors">مسح الكل</button>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
                     {recentlyViewed.map((product) => (
                       <ProductCard 
                         key={product.id} 
@@ -1257,7 +1344,7 @@ export default function App() {
                     { icon: <Flame className="text-red-600" />, title: "حلول متكاملة", desc: "من التوريد وحتى التركيب" }
                   ].map((f, i) => (
                     <motion.div 
-                      key={i}
+                      key={f.title}
                       initial={{ opacity: 0, y: 20 }}
                       whileInView={{ opacity: 1, y: 0 }}
                       viewport={{ once: true }}
@@ -1306,11 +1393,31 @@ export default function App() {
 
               {/* Product Grid */}
               <div className="flex-1">
-                <div className="flex justify-between items-center mb-8">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                   <h2 className="text-2xl font-bold">
                     {selectedCategory ? categories.find(c => c.id === selectedCategory)?.name : "كل المنتجات"}
                   </h2>
-                  <span className="text-gray-500 text-sm">{filteredProducts.length} منتج</span>
+                  <div className="flex items-center gap-4 w-full sm:w-auto">
+                    <div className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-3 py-2 shadow-sm">
+                      <span className="text-xs text-gray-400 whitespace-nowrap">ترتيب حسب:</span>
+                      <select 
+                        value={`${sortBy}-${sortOrder}`}
+                        onChange={(e) => {
+                          const [newSortBy, newSortOrder] = e.target.value.split("-");
+                          setSortBy(newSortBy);
+                          setSortOrder(newSortOrder);
+                        }}
+                        className="text-sm font-bold bg-transparent outline-none cursor-pointer"
+                      >
+                        <option value="date-desc">الأحدث</option>
+                        <option value="price-asc">السعر: من الأقل للأعلى</option>
+                        <option value="price-desc">السعر: من الأعلى للأقل</option>
+                        <option value="popularity-desc">الأكثر شعبية</option>
+                        <option value="rating-desc">الأعلى تقييماً</option>
+                      </select>
+                    </div>
+                    <span className="text-gray-500 text-sm whitespace-nowrap">{filteredProducts.length} منتج</span>
+                  </div>
                 </div>
 
                 {filteredProducts.length === 0 ? (
@@ -1697,8 +1804,8 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
                   
                   <div className="p-6">
                     <div className="space-y-4">
-                      {order.items.map((item: any, idx: number) => (
-                        <div key={idx} className="flex items-center gap-4">
+                      {order.items.map((item: any) => (
+                        <div key={item.id} className="flex items-center gap-4">
                           <div className="w-12 h-12 bg-gray-50 rounded-lg overflow-hidden shrink-0 border border-gray-100">
                             <img src={item.images?.[0]?.src} className="w-full h-full object-cover" alt={item.name} referrerPolicy="no-referrer" />
                           </div>
@@ -1754,6 +1861,11 @@ function ProductCard({ product, onAddToCart, isFavorite, onToggleFavorite, onVie
           {product.on_sale && (
             <div className="bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded-full text-center">
               عرض خاص
+            </div>
+          )}
+          {(product.featured === true || String(product.featured) === "true" || (product.featured as any) === 1 || String(product.featured) === "1") && (
+            <div className="bg-yellow-500 text-white text-[10px] font-bold px-2 py-1 rounded-full text-center flex items-center gap-1">
+              <Flame size={10} fill="currentColor" /> مميز
             </div>
           )}
         </div>

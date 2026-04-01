@@ -21,7 +21,9 @@ import {
   Settings as SettingsIcon,
   Phone,
   MessageCircle,
-  FileText
+  FileText,
+  Home,
+  Flame
 } from "lucide-react";
 import { db, collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, query, where, getDocs, handleFirestoreError, OperationType, setDoc, getDoc } from "../firebase";
 import { Product, Showroom, BankDetails } from "../types";
@@ -81,7 +83,7 @@ interface Banner {
 }
 
 export default function AdminDashboard({ userRole, userPermissions }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings'>('orders');
+  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'home' | 'payment_methods'>('orders');
   
   // Check permissions
   const hasPermission = (tab: string) => {
@@ -96,6 +98,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       case 'settings': return userPermissions.settings;
       case 'employees': return userPermissions.employees;
       case 'shipping': return userPermissions.shipping;
+      case 'home': return userPermissions.settings; // Use settings permission for home settings
+      case 'payment_methods': return userPermissions.settings; // Use settings permission for payment methods
       default: return false;
     }
   };
@@ -103,8 +107,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   useEffect(() => {
     // If current tab is not allowed, switch to first allowed tab
     if (!hasPermission(activeTab)) {
-      const tabs: ('products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings')[] = 
-        ['orders', 'products', 'employees', 'shipping', 'banners', 'showrooms', 'settings'];
+      const tabs: ('products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'payment_methods')[] = 
+        ['orders', 'products', 'employees', 'shipping', 'banners', 'showrooms', 'settings', 'payment_methods'];
       const firstAllowed = tabs.find(t => hasPermission(t));
       if (firstAllowed) setActiveTab(firstAllowed);
     }
@@ -118,6 +122,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   const [banners, setBanners] = useState<Banner[]>([]);
   const [showrooms, setShowrooms] = useState<Showroom[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankDetails[]>([]);
+  const [paymentGateways, setPaymentGateways] = useState<any[]>([]);
+  const [isEditingPayment, setIsEditingPayment] = useState<any | null>(null);
   const [isEditingProduct, setIsEditingProduct] = useState<any | null>(null);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [isEditingShipping, setIsEditingShipping] = useState<any | null>(null);
@@ -133,6 +139,68 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [editingType, setEditingType] = useState('simple');
   const [loading, setLoading] = useState(false);
+  const [homeSettings, setHomeSettings] = useState<{ productsPerPage: number }>({ productsPerPage: 8 });
+
+  const fetchHomeSettings = async () => {
+    try {
+      const docRef = doc(db, 'settings', 'home');
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setHomeSettings(docSnap.data() as any);
+      } else {
+        // Create default settings if not exists
+        await setDoc(docRef, { productsPerPage: 8 });
+      }
+    } catch (error) {
+      console.error("Error fetching home settings:", error);
+    }
+  };
+
+  const updateHomeSettings = async (settings: { productsPerPage: number }) => {
+    setLoading(true);
+    try {
+      const docRef = doc(db, 'settings', 'home');
+      await setDoc(docRef, settings);
+      setHomeSettings(settings);
+      alert("تم حفظ الإعدادات بنجاح");
+    } catch (error) {
+      console.error("Error updating home settings:", error);
+      alert("حدث خطأ أثناء حفظ الإعدادات");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isFeatured = (p: any) => p.featured === true || String(p.featured) === "true" || (p.featured as any) === 1 || String(p.featured) === "1";
+
+  const toggleFeatured = async (product: any) => {
+    const currentFeatured = isFeatured(product);
+    console.log(`📡 Toggling featured for product ${product.id}. Current status: ${currentFeatured}`);
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/products/${product.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          featured: !currentFeatured
+        })
+      });
+      if (response.ok) {
+        console.log(`✅ Product ${product.id} featured status toggled successfully`);
+        alert("تم تحديث حالة التمييز بنجاح");
+        await fetchProducts();
+      } else {
+        const err = await response.json();
+        console.error(`❌ Failed to toggle featured status for product ${product.id}:`, err);
+        alert("فشل تحديث حالة التمييز: " + (err.details?.message || err.error));
+      }
+    } catch (error) {
+      console.error("❌ Error toggling featured:", error);
+      alert("حدث خطأ أثناء الاتصال بالخادم");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchShippingMethods = async () => {
     try {
@@ -233,12 +301,60 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     }
   };
 
+  const fetchPaymentGateways = async () => {
+    try {
+      const response = await fetch("/api/payment-gateways");
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        setPaymentGateways(data);
+      } else {
+        console.error("Payment gateways data is not an array:", data);
+        setPaymentGateways([]);
+      }
+    } catch (error) {
+      console.error("Error fetching payment gateways:", error);
+    }
+  };
+
+  const updatePaymentGateway = async (id: string, data: any) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/payment-gateways/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (response.ok) {
+        await fetchPaymentGateways();
+        setIsEditingPayment(null);
+        alert("تم تحديث وسيلة الدفع بنجاح");
+      } else {
+        const err = await response.json();
+        alert("فشل تحديث وسيلة الدفع: " + (err.details?.message || err.error));
+      }
+    } catch (error) {
+      console.error("Error updating payment gateway:", error);
+      alert("حدث خطأ أثناء الاتصال بالخادم");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const togglePaymentGateway = async (gateway: any) => {
+    await updatePaymentGateway(gateway.id, { enabled: !gateway.enabled });
+  };
+
   const fetchProducts = async () => {
     try {
       const response = await fetch("/api/products?per_page=100");
       const data = await response.json();
       if (Array.isArray(data)) {
-        setProducts(data);
+        const processedData = data.map(p => ({
+          ...p,
+          featured: isFeatured(p)
+        }));
+        console.log("📡 Products fetched:", processedData.length, "items. Sample featured status:", processedData[0]?.featured);
+        setProducts(processedData);
       } else {
         console.error("Products data is not an array:", data);
         setProducts([]);
@@ -299,6 +415,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     fetchCategories();
     fetchShippingMethods();
     fetchShippingZones();
+    fetchHomeSettings();
+    fetchPaymentGateways();
 
     // Listen to employees (users with roles)
     const usersRef = collection(db, "users");
@@ -721,6 +839,26 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                 </button>
               )}
 
+              {hasPermission('payment_methods') && (
+                <button 
+                  onClick={() => setActiveTab('payment_methods')}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'payment_methods' ? 'bg-red-600 text-white shadow-lg shadow-red-100' : 'hover:bg-gray-50 text-gray-600'}`}
+                >
+                  <CreditCard size={20} />
+                  <span className="font-bold">طرق الدفع</span>
+                </button>
+              )}
+
+              {hasPermission('home') && (
+                <button 
+                  onClick={() => setActiveTab('home')}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'home' ? 'bg-red-600 text-white shadow-lg shadow-red-100' : 'hover:bg-gray-50 text-gray-600'}`}
+                >
+                  <Home size={20} />
+                  <span className="font-bold">إعدادات الرئيسية</span>
+                </button>
+              )}
+
               {hasPermission('settings') && (
                 <button 
                   onClick={() => setActiveTab('settings')}
@@ -829,7 +967,18 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                         <img src={product.images?.[0]?.src} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform" referrerPolicy="no-referrer" />
                       </div>
                       <h4 className="font-bold mb-2 line-clamp-1">{product.name}</h4>
-                      <p className="text-red-700 font-black mb-4">{product.price} ر.س</p>
+                      <div className="flex justify-between items-center mb-4">
+                        <p className="text-red-700 font-black">{product.price} ر.س</p>
+                        <button 
+                          onClick={() => toggleFeatured(product)}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                            isFeatured(product) ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' : 'bg-gray-100 text-gray-400 border border-gray-200'
+                          }`}
+                        >
+                          <Flame size={12} className={isFeatured(product) ? "fill-yellow-700" : ""} />
+                          {isFeatured(product) ? 'مميز' : 'تمييز'}
+                        </button>
+                      </div>
                       <div className="flex gap-2">
                         <button onClick={() => setIsEditingProduct(product)} className="flex-1 flex items-center justify-center gap-2 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors font-bold text-sm">
                           <Edit2 size={16} /> تعديل
@@ -1376,6 +1525,135 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
               </motion.div>
             )}
 
+            {activeTab === 'home' && (
+              <motion.div 
+                key="home"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-8"
+              >
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-bold">إعدادات الصفحة الرئيسية</h2>
+                </div>
+
+                <div className="bg-white border border-gray-100 rounded-3xl p-8 shadow-sm space-y-8">
+                  <div className="max-w-md space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-gray-600">عدد المنتجات المعروضة في الصفحة الرئيسية</label>
+                      <div className="flex gap-4">
+                        <input 
+                          type="number" 
+                          value={homeSettings.productsPerPage}
+                          onChange={(e) => setHomeSettings({ ...homeSettings, productsPerPage: parseInt(e.target.value) || 0 })}
+                          className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500 outline-none"
+                          min="1"
+                          max="100"
+                        />
+                        <button 
+                          onClick={() => updateHomeSettings(homeSettings)}
+                          disabled={loading}
+                          className="bg-red-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-red-700 transition-all disabled:opacity-50"
+                        >
+                          {loading ? <Clock className="animate-spin" size={20} /> : 'حفظ'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-400">سيتم تطبيق هذا العدد على أقسام "أحدث المنتجات" و "الأكثر مبيعاً".</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-8 border-t border-gray-100">
+                    <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
+                      <Flame className="text-yellow-500 fill-yellow-500" size={20} />
+                      المنتجات المميزة الحالية ({products.filter(p => isFeatured(p)).length})
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {products.filter(p => isFeatured(p)).map(product => (
+                        <div key={product.id} className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-lg overflow-hidden bg-white shrink-0">
+                            <img src={product.images?.[0]?.src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold truncate">{product.name}</p>
+                            <button 
+                              onClick={() => toggleFeatured(product)}
+                              className="text-[10px] text-red-600 font-bold hover:underline"
+                            >
+                              إزالة من المميزة
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {products.filter(p => isFeatured(p)).length === 0 && (
+                        <div className="col-span-full py-8 text-center text-gray-400 text-sm">
+                          لا توجد منتجات مميزة حالياً. يمكنك تمييز المنتجات من تبويب "المنتجات".
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'payment_methods' && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8"
+              >
+                <div className="flex justify-between items-center mb-8">
+                  <div>
+                    <h2 className="text-2xl font-bold mb-2">طرق الدفع</h2>
+                    <p className="text-gray-500">إدارة بوابات الدفع المتاحة في المتجر (مزامنة مع ووكومرس)</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-6">
+                  {paymentGateways.map(gateway => (
+                    <div key={gateway.id} className="border rounded-2xl p-6 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start">
+                        <div className="flex gap-4">
+                          <div className="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center text-red-600">
+                            <CreditCard size={24} />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-bold">{gateway.title}</h3>
+                            <p className="text-sm text-gray-500 mb-2">{gateway.description}</p>
+                            <div className="flex gap-2">
+                              {gateway.method_supports.map((support: string) => (
+                                <span key={support} className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-full text-gray-600">
+                                  {support}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-medium ${gateway.enabled ? 'text-green-600' : 'text-gray-400'}`}>
+                              {gateway.enabled ? 'مفعل' : 'معطل'}
+                            </span>
+                            <button 
+                              onClick={() => togglePaymentGateway(gateway)}
+                              className={`w-12 h-6 rounded-full transition-colors relative ${gateway.enabled ? 'bg-green-500' : 'bg-gray-300'}`}
+                            >
+                              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${gateway.enabled ? 'left-7' : 'left-1'}`} />
+                            </button>
+                          </div>
+                          <button 
+                            onClick={() => setIsEditingPayment(gateway)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Edit2 size={20} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
             {activeTab === 'settings' && (
               <motion.div 
                 key="settings"
@@ -1724,8 +2002,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
               <div className="space-y-4">
                 <h4 className="font-bold text-gray-400 text-xs uppercase tracking-wider">المنتجات المطلوبة ({selectedOrder.items.length})</h4>
                 <div className="space-y-3">
-                  {selectedOrder.items.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-4 p-4 border border-gray-100 rounded-2xl hover:bg-gray-50 transition-colors">
+                  {selectedOrder.items.map((item: any) => (
+                    <div key={item.id} className="flex items-center gap-4 p-4 border border-gray-100 rounded-2xl hover:bg-gray-50 transition-colors">
                       <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
                         {item.images?.[0]?.src ? (
                           <img src={item.images[0].src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -1836,6 +2114,84 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                   إغلاق
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Payment Gateway Edit Modal */}
+      <AnimatePresence>
+        {isEditingPayment && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl"
+            >
+              <div className="p-6 border-b flex justify-between items-center bg-gray-50">
+                <h3 className="text-xl font-bold">تعديل وسيلة الدفع: {isEditingPayment.title}</h3>
+                <button onClick={() => setIsEditingPayment(null)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const data = {
+                  title: formData.get('title'),
+                  description: formData.get('description'),
+                  enabled: formData.get('enabled') === 'on'
+                };
+                await updatePaymentGateway(isEditingPayment.id, data);
+              }} className="p-6 space-y-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">العنوان</label>
+                  <input 
+                    name="title"
+                    defaultValue={isEditingPayment.title}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">الوصف</label>
+                  <textarea 
+                    name="description"
+                    defaultValue={isEditingPayment.description}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-red-500 outline-none transition-all h-32 resize-none"
+                    required
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="checkbox"
+                    name="enabled"
+                    id="gateway_enabled"
+                    defaultChecked={isEditingPayment.enabled}
+                    className="w-5 h-5 text-red-600 rounded border-gray-300 focus:ring-red-500"
+                  />
+                  <label htmlFor="gateway_enabled" className="text-sm font-bold text-gray-700">تفعيل وسيلة الدفع</label>
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <button 
+                    type="submit"
+                    disabled={loading}
+                    className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-100 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {loading ? <Clock className="animate-spin" size={20} /> : <Save size={20} />}
+                    حفظ التغييرات
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setIsEditingPayment(null)}
+                    className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

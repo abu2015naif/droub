@@ -137,8 +137,8 @@ async function startServer() {
 
   app.get(["/api/products", "/products"], async (req, res) => {
     try {
-      const { per_page = 20, page = 1, category, search } = req.query;
-      const cacheKey = `products-${per_page}-${page}-${category || 'all'}-${search || 'none'}`;
+      const { per_page = 20, page = 1, category, search, featured, orderby, order } = req.query;
+      const cacheKey = `products-${per_page}-${page}-${category || 'all'}-${search || 'none'}-${featured || 'all'}-${orderby || 'date'}-${order || 'desc'}`;
       
       const cachedData = getCachedData(cacheKey);
       if (cachedData) {
@@ -151,6 +151,9 @@ async function startServer() {
         page,
         category,
         search,
+        featured: featured === 'true' ? true : undefined,
+        orderby: orderby || "date",
+        order: order || "desc",
         status: "publish"
       });
       
@@ -245,11 +248,18 @@ async function startServer() {
 
   app.put("/api/products/:id", async (req, res) => {
     try {
-      const response = await WooCommerce.put(`products/${req.params.id}`, req.body);
+      const updateData = { ...req.body };
+      if (updateData.featured !== undefined) {
+        updateData.featured = updateData.featured === true || String(updateData.featured) === "true";
+      }
+      
+      console.log(`📡 Updating product ${req.params.id} with:`, updateData);
+      const response = await WooCommerce.put(`products/${req.params.id}`, updateData);
+      console.log(`✅ Product ${req.params.id} updated successfully. New featured status:`, response.data.featured);
       clearProductCache();
       res.json(response.data);
     } catch (error: any) {
-      console.error("WooCommerce API Error (Update Product):", error.response?.data || error.message);
+      console.error("❌ WooCommerce API Error (Update Product):", error.response?.data || error.message);
       res.status(500).json({ error: "Failed to update product", details: error.response?.data });
     }
   });
@@ -391,6 +401,28 @@ async function startServer() {
     }
   });
 
+  // Payment Gateway Routes
+  app.get("/api/payment-gateways", async (req, res) => {
+    try {
+      const response = await WooCommerce.get("payment_gateways");
+      res.json(response.data);
+    } catch (error: any) {
+      console.error("WooCommerce API Error (Payment Gateways):", error.response?.data || error.message);
+      res.status(500).json({ error: "Failed to fetch payment gateways" });
+    }
+  });
+
+  app.put("/api/payment-gateways/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const response = await WooCommerce.put(`payment_gateways/${id}`, req.body);
+      res.json(response.data);
+    } catch (error: any) {
+      console.error("WooCommerce API Error (Update Payment Gateway):", error.response?.data || error.message);
+      res.status(500).json({ error: "Failed to update payment gateway", details: error.response?.data });
+    }
+  });
+
   // Shipping Routes
   app.get("/api/shipping/methods", async (req, res) => {
     try {
@@ -452,13 +484,15 @@ async function startServer() {
       const response = await WooCommerce.get("shipping/zones");
       let zones = Array.isArray(response.data) ? response.data : [];
       
-      // Add Zone 0 (Rest of the world)
-      zones.push({
-        id: 0,
-        name: "باقي المناطق",
-        order: 0,
-        formatted_location: "جميع المناطق غير المشمولة"
-      });
+      // Add Zone 0 (Rest of the world) if not already present
+      if (!zones.find((z: any) => z.id === 0)) {
+        zones.push({
+          id: 0,
+          name: "باقي المناطق",
+          order: 0,
+          formatted_location: "جميع المناطق غير المشمولة"
+        });
+      }
       
       res.json(zones);
     } catch (error: any) {

@@ -9,6 +9,7 @@ export interface Product {
   regular_price: string;
   sale_price: string;
   on_sale: boolean;
+  featured: boolean;
   images: {
     id: number;
     src: string;
