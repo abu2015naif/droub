@@ -1,9 +1,10 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import WooCommerceRestApi from "@woocommerce/woocommerce-rest-api";
 import dotenv from "dotenv";
 import axios from "axios";
+import https from "https";
+import fs from "fs";
 
 dotenv.config();
 
@@ -28,12 +29,12 @@ async function startServer() {
       consumerKey: consumerKey,
       consumerSecret: consumerSecret,
       version: "wc/v3",
-      queryString: true,
+      queryStringAuth: true,
       timeout: 20000,
       axiosConfig: {
         // This is crucial if the site shows "Not Secure" in the browser
         // It allows Node.js to connect even if the SSL certificate is invalid
-        httpsAgent: new (require('https').Agent)({
+        httpsAgent: new https.Agent({
           rejectUnauthorized: false
         })
       }
@@ -56,7 +57,12 @@ async function startServer() {
   });
 
   // API Routes
-  app.get("/api/products", async (req, res) => {
+  app.use((req, res, next) => {
+    console.log(`Incoming request: ${req.method} ${req.url} (Path: ${req.path})`);
+    next();
+  });
+
+  app.get(["/api/products", "/products"], async (req, res) => {
     try {
       const { per_page = 20, page = 1, category, search } = req.query;
       const response = await WooCommerce.get("products", {
@@ -360,8 +366,14 @@ async function startServer() {
     }
   });
 
+  // Catch-all for /api/* to prevent returning HTML
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.path}` });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -370,7 +382,7 @@ async function startServer() {
   } else {
     // On Vercel, static files are handled by vercel.json, but we keep this for local production testing
     const distPath = path.join(process.cwd(), "dist");
-    if (require('fs').existsSync(distPath)) {
+    if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
       app.get("*", (req, res) => {
         res.sendFile(path.join(distPath, "index.html"));
