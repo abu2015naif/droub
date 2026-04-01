@@ -2471,8 +2471,27 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
 
   const handlePhoneSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!phoneNumber.startsWith('+')) {
-      alert("يرجى إدخال رقم الجوال مع رمز الدولة (مثال: +966500000000)");
+    
+    let formattedPhone = phoneNumber.trim();
+    
+    // Auto-format for Saudi Arabia (+966)
+    if (!formattedPhone.startsWith('+')) {
+      // If starts with 05, remove 0 and add +966
+      if (formattedPhone.startsWith('05')) {
+        formattedPhone = '+966' + formattedPhone.substring(1);
+      } 
+      // If starts with 5, add +966
+      else if (formattedPhone.startsWith('5')) {
+        formattedPhone = '+966' + formattedPhone;
+      }
+      // If it's just numbers, assume it's a local number and add +966
+      else if (/^\d+$/.test(formattedPhone)) {
+        formattedPhone = '+966' + formattedPhone;
+      }
+    }
+
+    if (!formattedPhone.startsWith('+')) {
+      alert("يرجى إدخال رقم الجوال بشكل صحيح (مثال: 0500000000)");
       return;
     }
 
@@ -2481,7 +2500,7 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
       const appVerifier = recaptchaVerifierRef.current;
       if (!appVerifier) throw new Error("Recaptcha not initialized");
       
-      const confirmation = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
+      const confirmation = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
       setConfirmationResult(confirmation);
       setShowOTP(true);
     } catch (error: any) {
@@ -2591,7 +2610,7 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
             {showOTP ? "تحقق من الرمز" : (isPhoneMode ? "تسجيل الدخول بالجوال" : (isResetMode ? "استعادة كلمة المرور" : (isRegisterMode ? "إنشاء حساب جديد" : "تسجيل الدخول")))}
           </h2>
           <p className="text-gray-500 text-sm mt-2">
-            {showOTP ? "أدخل الرمز المرسل إلى جوالك" : (isPhoneMode ? "أدخل رقم جوالك مع رمز الدولة" : (isResetMode ? "أدخل بريدك الإلكتروني لاستلام رابط الاستعادة" : (isRegisterMode ? "انضم إلينا في دروب السلامة" : "أهلاً بك مجدداً في دروب السلامة")))}
+            {showOTP ? "أدخل الرمز المرسل إلى جوالك" : (isPhoneMode ? "أدخل رقم جوالك للمتابعة" : (isResetMode ? "أدخل بريدك الإلكتروني لاستلام رابط الاستعادة" : (isRegisterMode ? "انضم إلينا في دروب السلامة" : "أهلاً بك مجدداً في دروب السلامة")))}
           </p>
         </div>
 
@@ -2607,7 +2626,7 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
                   className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-5 py-4 focus:ring-2 focus:ring-red-500 outline-none transition-all text-left" 
-                  placeholder="+966500000000"
+                  placeholder="05XXXXXXXX"
                 />
               </div>
             ) : (
