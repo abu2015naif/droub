@@ -2444,16 +2444,19 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
       if (isOpen && isPhoneMode && recaptchaContainerRef.current) {
         try {
           // Clear container to prevent duplicate rendering
-          recaptchaContainerRef.current.innerHTML = '<div id="recaptcha-verifier"></div>';
+          recaptchaContainerRef.current.innerHTML = '<div id="recaptcha-verifier-container"></div>';
           
-          verifier = new RecaptchaVerifier(auth, 'recaptcha-verifier', {
+          const verifierElement = document.getElementById('recaptcha-verifier-container');
+          if (!verifierElement) return;
+
+          verifier = new RecaptchaVerifier(auth, verifierElement, {
             'size': 'invisible',
             'callback': () => {
               // reCAPTCHA solved
             },
             'expired-callback': () => {
-              if (verifier) {
-                verifier.clear();
+              if (recaptchaVerifierRef.current) {
+                recaptchaVerifierRef.current.clear();
                 setup();
               }
             }
@@ -2511,6 +2514,17 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
 
     setLoading(true);
     try {
+      // If we already have a verifier, try to reset it to be safe
+      if (recaptchaVerifierRef.current) {
+        try {
+          // Some versions of Firebase might throw if we clear and then use, 
+          // so we just ensure it's rendered.
+          await recaptchaVerifierRef.current.render();
+        } catch (e) {
+          console.warn("Recaptcha render warning:", e);
+        }
+      }
+
       const appVerifier = recaptchaVerifierRef.current;
       if (!appVerifier) throw new Error("Recaptcha not initialized");
       
@@ -2519,6 +2533,24 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
       setShowOTP(true);
     } catch (error: any) {
       console.error("Phone auth error:", error);
+      
+      // If error is -39, it's often a recaptcha issue, try to clear it for the next attempt
+      if (error.code === 'auth/internal-error' || error.message?.includes('-39')) {
+        if (recaptchaVerifierRef.current) {
+          try {
+            recaptchaVerifierRef.current.clear();
+            recaptchaVerifierRef.current = null;
+          } catch (e) {
+            console.error("Error clearing recaptcha after -39:", e);
+          }
+        }
+        // Force a re-setup of recaptcha
+        setTimeout(() => {
+          setIsPhoneMode(false);
+          setTimeout(() => setIsPhoneMode(true), 100);
+        }, 100);
+      }
+
       let message = "حدث خطأ في إرسال الرمز. يرجى المحاولة مرة أخرى.";
       if (error.code === 'auth/invalid-phone-number') message = "رقم الجوال غير صحيح.";
       if (error.code === 'auth/too-many-requests') message = "تم إرسال الكثير من الطلبات، يرجى المحاولة لاحقاً.";

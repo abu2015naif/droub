@@ -62,9 +62,33 @@ async function startServer() {
     next();
   });
 
+  // Simple in-memory cache
+  const cache: { [key: string]: { data: any, timestamp: number } } = {};
+  const CACHE_TTL = 1000 * 60 * 10; // 10 minutes
+
+  const getCachedData = (key: string) => {
+    const cached = cache[key];
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return cached.data;
+    }
+    return null;
+  };
+
+  const setCachedData = (key: string, data: any) => {
+    cache[key] = { data, timestamp: Date.now() };
+  };
+
   app.get(["/api/products", "/products"], async (req, res) => {
     try {
       const { per_page = 20, page = 1, category, search } = req.query;
+      const cacheKey = `products-${per_page}-${page}-${category || 'all'}-${search || 'none'}`;
+      
+      const cachedData = getCachedData(cacheKey);
+      if (cachedData) {
+        console.log(`Serving from cache: ${cacheKey}`);
+        return res.json(cachedData);
+      }
+
       const response = await WooCommerce.get("products", {
         per_page,
         page,
@@ -72,6 +96,8 @@ async function startServer() {
         search,
         status: "publish"
       });
+      
+      setCachedData(cacheKey, response.data);
       res.json(response.data);
     } catch (error: any) {
       let errorData = error.response?.data || error.message;
@@ -92,10 +118,19 @@ async function startServer() {
 
   app.get("/api/categories", async (req, res) => {
     try {
+      const cacheKey = "categories-all";
+      const cachedData = getCachedData(cacheKey);
+      if (cachedData) {
+        console.log(`Serving from cache: ${cacheKey}`);
+        return res.json(cachedData);
+      }
+
       const response = await WooCommerce.get("products/categories", {
         per_page: 100,
         hide_empty: true
       });
+      
+      setCachedData(cacheKey, response.data);
       res.json(response.data);
     } catch (error: any) {
       let errorData = error.response?.data || error.message;
@@ -114,7 +149,15 @@ async function startServer() {
 
   app.get("/api/products/:id", async (req, res) => {
     try {
+      const cacheKey = `product-${req.params.id}`;
+      const cachedData = getCachedData(cacheKey);
+      if (cachedData) {
+        console.log(`Serving from cache: ${cacheKey}`);
+        return res.json(cachedData);
+      }
+
       const response = await WooCommerce.get(`products/${req.params.id}`);
+      setCachedData(cacheKey, response.data);
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Product Detail):", error.response?.data || error.message);
@@ -122,9 +165,20 @@ async function startServer() {
     }
   });
 
+  const clearProductCache = () => {
+    // Clear all product-related cache keys
+    Object.keys(cache).forEach(key => {
+      if (key.startsWith('products-') || key.startsWith('product-')) {
+        delete cache[key];
+      }
+    });
+    console.log("Product cache cleared due to update/create/delete");
+  };
+
   app.post("/api/products", async (req, res) => {
     try {
       const response = await WooCommerce.post("products", req.body);
+      clearProductCache();
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Create Product):", error.response?.data || error.message);
@@ -135,6 +189,7 @@ async function startServer() {
   app.put("/api/products/:id", async (req, res) => {
     try {
       const response = await WooCommerce.put(`products/${req.params.id}`, req.body);
+      clearProductCache();
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Update Product):", error.response?.data || error.message);
@@ -147,6 +202,7 @@ async function startServer() {
       const response = await WooCommerce.delete(`products/${req.params.id}`, {
         force: true // Permanently delete
       });
+      clearProductCache();
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Delete Product):", error.response?.data || error.message);
@@ -281,6 +337,13 @@ async function startServer() {
   // Shipping Routes
   app.get("/api/shipping/methods", async (req, res) => {
     try {
+      const cacheKey = "shipping-methods-all";
+      const cachedData = getCachedData(cacheKey);
+      if (cachedData) {
+        console.log(`Serving from cache: ${cacheKey}`);
+        return res.json(cachedData);
+      }
+
       // First get zones
       const zonesRes = await WooCommerce.get("shipping/zones");
       const zones = zonesRes.data;
@@ -311,6 +374,7 @@ async function startServer() {
         // Zone 0 might not have methods or might fail in some WC versions
       }
 
+      setCachedData(cacheKey, allMethods);
       res.json(allMethods);
     } catch (error: any) {
       console.error("WooCommerce API Error (Shipping):", error.response?.data || error.message);
@@ -338,10 +402,20 @@ async function startServer() {
     }
   });
 
+  const clearShippingCache = () => {
+    Object.keys(cache).forEach(key => {
+      if (key.startsWith('shipping-')) {
+        delete cache[key];
+      }
+    });
+    console.log("Shipping cache cleared due to update/create/delete");
+  };
+
   app.post("/api/shipping/methods/:zoneId", async (req, res) => {
     try {
       const { zoneId } = req.params;
       const response = await WooCommerce.post(`shipping/zones/${zoneId}/methods`, req.body);
+      clearShippingCache();
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Create Shipping):", error.response?.data || error.message);
@@ -353,6 +427,7 @@ async function startServer() {
     try {
       const { zoneId, instanceId } = req.params;
       const response = await WooCommerce.put(`shipping/zones/${zoneId}/methods/${instanceId}`, req.body);
+      clearShippingCache();
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Update Shipping):", error.response?.data || error.message);
@@ -364,6 +439,7 @@ async function startServer() {
     try {
       const { zoneId, instanceId } = req.params;
       const response = await WooCommerce.delete(`shipping/zones/${zoneId}/methods/${instanceId}`, { force: true });
+      clearShippingCache();
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Delete Shipping):", error.response?.data || error.message);
