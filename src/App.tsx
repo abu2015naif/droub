@@ -655,6 +655,7 @@ export default function App() {
                     alt={user.displayName || ""} 
                     className="w-10 h-10 rounded-full border border-gray-200 cursor-pointer" 
                     onClick={() => setActiveTab("profile")}
+                    referrerPolicy="no-referrer"
                   />
                   <div className="absolute left-0 top-full mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all z-50">
                     <div className="p-4 border-b border-gray-50">
@@ -1387,6 +1388,14 @@ export default function App() {
         onAddToCart={addToCart}
         isFavorite={selectedProduct ? favorites.includes(selectedProduct.id) : false}
         onToggleFavorite={() => selectedProduct && toggleFavorite(selectedProduct.id)}
+        allProducts={[...products, ...recentlyViewed, ...cart]}
+        onProductClick={(p) => {
+          setSelectedProduct(null);
+          setTimeout(() => {
+            setSelectedProduct(p);
+            addToRecentlyViewed(p);
+          }, 100);
+        }}
       />
 
       {/* Login Modal */}
@@ -1582,6 +1591,7 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
                 src={user.photoURL || "https://ui-avatars.com/api/?name=" + (user.displayName || "User")} 
                 className="w-24 h-24 rounded-full border-4 border-red-50 mb-4" 
                 alt={user.displayName || ""} 
+                referrerPolicy="no-referrer"
               />
               <h3 className="text-xl font-bold">{user.displayName}</h3>
               <p className="text-sm text-gray-400">{user.email}</p>
@@ -1648,7 +1658,7 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
                       {order.items.map((item: any, idx: number) => (
                         <div key={idx} className="flex items-center gap-4">
                           <div className="w-12 h-12 bg-gray-50 rounded-lg overflow-hidden shrink-0 border border-gray-100">
-                            <img src={item.images?.[0]?.src} className="w-full h-full object-cover" alt={item.name} />
+                            <img src={item.images?.[0]?.src} className="w-full h-full object-cover" alt={item.name} referrerPolicy="no-referrer" />
                           </div>
                           <div className="flex-1">
                             <p className="text-sm font-bold line-clamp-1">{item.name}</p>
@@ -2144,8 +2154,8 @@ function CheckoutPage({
                     <p className="text-xs text-gray-500">دفع آمن عبر بوابة Telr</p>
                   </div>
                   <div className="flex gap-2">
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" className="h-4" alt="Visa" />
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" className="h-4" alt="Mastercard" />
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" className="h-4" alt="Visa" referrerPolicy="no-referrer" />
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" className="h-4" alt="Mastercard" referrerPolicy="no-referrer" />
                   </div>
                 </div>
 
@@ -2160,7 +2170,7 @@ function CheckoutPage({
                       <p className="text-xs text-gray-500">دفع سريع وآمن عبر Apple Pay</p>
                     </div>
                     <div className="flex gap-2">
-                      <img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/Apple_Pay_logo.svg" className="h-8" alt="Apple Pay" />
+                      <img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/Apple_Pay_logo.svg" className="h-8" alt="Apple Pay" referrerPolicy="no-referrer" />
                     </div>
                   </div>
                 )}
@@ -2286,7 +2296,7 @@ function CheckoutPage({
               {cart.map(item => (
                 <div key={item.id} className="flex gap-4">
                   <div className="w-16 h-16 bg-white/10 rounded-xl overflow-hidden shrink-0">
-                    <img src={item.images[0]?.src} className="w-full h-full object-cover" />
+                    <img src={item.images[0]?.src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-bold line-clamp-1">{item.name}</p>
@@ -2327,13 +2337,79 @@ function CheckoutPage({
   );
 }
 
-function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onToggleFavorite }: { 
+function ProductDescription({ html, products, onProductClick }: { html: string, products: Product[], onProductClick: (p: Product) => void }) {
+  if (!html) return null;
+  
+  // Regex to find <a> tags
+  const linkRegex = /<a\s+[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi;
+  
+  // Split the HTML string by the links
+  const parts = html.split(linkRegex);
+  
+  const elements = [];
+  for (let i = 0; i < parts.length; i += 3) {
+    // Add the text part
+    if (parts[i]) {
+      elements.push(<span key={`text-${i}`} dangerouslySetInnerHTML={{ __html: parts[i] }} />);
+    }
+    
+    // Add the link part as a thumbnail if it matches a product
+    if (i + 1 < parts.length) {
+      const href = parts[i + 1];
+      const linkText = parts[i + 2];
+      
+      // Try to find the product by slug or ID in the href
+      const slugMatch = href.match(/\/product\/([^/]+)\/?/);
+      const idMatch = href.match(/\?product=(\d+)/);
+      
+      let linkedProduct = null;
+      if (slugMatch) {
+        linkedProduct = products.find(p => p.slug === slugMatch[1]);
+      } else if (idMatch) {
+        linkedProduct = products.find(p => p.id === parseInt(idMatch[1]));
+      }
+      
+      if (linkedProduct) {
+        elements.push(
+          <div 
+            key={`product-${i}`}
+            onClick={() => onProductClick(linkedProduct)}
+            className="inline-flex items-center gap-3 p-2 bg-gray-50 border border-gray-100 rounded-xl hover:border-red-200 hover:bg-red-50 transition-all cursor-pointer my-2 group"
+          >
+            <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0">
+              <img 
+                src={linkedProduct.images[0]?.src || "https://picsum.photos/seed/safety/200"} 
+                alt={linkedProduct.name}
+                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-red-600 font-bold uppercase tracking-wider leading-none mb-1">منتج ذو صلة</span>
+              <span className="text-xs font-bold text-gray-900 leading-tight">{linkedProduct.name}</span>
+              <span className="text-[10px] text-gray-500 font-medium">{linkedProduct.price} ر.س</span>
+            </div>
+          </div>
+        );
+      } else {
+        // If not found, just render the original link
+        elements.push(<a key={`link-${i}`} href={href} target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline" dangerouslySetInnerHTML={{ __html: linkText }} />);
+      }
+    }
+  }
+  
+  return <div className="prose prose-sm text-gray-600 mb-10 leading-relaxed">{elements}</div>;
+}
+
+function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onToggleFavorite, allProducts, onProductClick }: { 
   product: Product | null, 
   isOpen: boolean, 
   onClose: () => void,
   onAddToCart: (p: Product) => void,
   isFavorite: boolean,
-  onToggleFavorite: () => void
+  onToggleFavorite: () => void,
+  allProducts: Product[],
+  onProductClick: (p: Product) => void
 }) {
   if (!product) return null;
 
@@ -2395,7 +2471,11 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                 )}
               </div>
 
-              <div className="prose prose-sm text-gray-600 mb-10 leading-relaxed" dangerouslySetInnerHTML={{ __html: product.description }} />
+              <ProductDescription 
+                html={product.description} 
+                products={allProducts} 
+                onProductClick={onProductClick} 
+              />
 
               <div className="flex flex-col sm:flex-row gap-4">
                 <button 
@@ -2771,7 +2851,7 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
                 onClick={onGoogleLogin}
                 className="w-full bg-white border border-gray-200 text-gray-700 py-4 rounded-2xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-3"
               >
-                <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
+                <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" referrerPolicy="no-referrer" />
                 الدخول بواسطة جوجل
               </button>
 

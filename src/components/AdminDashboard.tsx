@@ -806,7 +806,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                   {products.map(product => (
                     <div key={product.id} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm group">
                       <div className="aspect-square rounded-xl overflow-hidden mb-4 bg-gray-50">
-                        <img src={product.images?.[0]?.src} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                        <img src={product.images?.[0]?.src} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform" referrerPolicy="no-referrer" />
                       </div>
                       <h4 className="font-bold mb-2 line-clamp-1">{product.name}</h4>
                       <p className="text-red-700 font-black mb-4">{product.price} ر.س</p>
@@ -1708,7 +1708,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                     <div key={idx} className="flex items-center gap-4 p-4 border border-gray-100 rounded-2xl hover:bg-gray-50 transition-colors">
                       <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
                         {item.images?.[0]?.src ? (
-                          <img src={item.images[0].src} className="w-full h-full object-cover" />
+                          <img src={item.images[0].src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <Package size={24} className="text-gray-300" />
                         )}
@@ -1786,6 +1786,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                                     className="w-full max-w-[200px] rounded-xl border border-green-200 cursor-pointer hover:opacity-90 transition-opacity" 
                                     onClick={() => window.open(selectedOrder.bankTransferInfo.receiptUrl, '_blank')}
                                     alt="إيصال التحويل"
+                                    referrerPolicy="no-referrer"
                                   />
                                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
                                     <div className="bg-black/50 text-white px-3 py-1 rounded-full text-[10px]">اضغط للتكبير</div>
