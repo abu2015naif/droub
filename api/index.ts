@@ -193,7 +193,7 @@ async function startServer() {
   // Telr Payment Routes
   app.post("/api/payment/telr", async (req, res) => {
     try {
-      const { orderId, amount, currency, customer, returnUrl, cancelUrl } = req.body;
+      const { orderId, amount, currency, customer, returnUrl, cancelUrl, payMethod } = req.body;
       
       const storeId = process.env.TELR_STORE_ID;
       const apiKey = process.env.TELR_API_KEY;
@@ -216,6 +216,11 @@ async function startServer() {
       params.append("return_can", cancelUrl);
       params.append("return_decl", cancelUrl);
       params.append("ivp_trantype", "sale");
+      
+      if (payMethod) {
+        params.append("ivp_paymethod", payMethod);
+      }
+
       params.append("bill_fname", customer.firstName || "Customer");
       params.append("bill_sname", customer.lastName || "Name");
       params.append("bill_addr1", customer.address || "N/A");

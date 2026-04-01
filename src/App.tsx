@@ -499,7 +499,7 @@ export default function App() {
         createdAt: new Date().toISOString()
       });
 
-      if (paymentMethod === "telr") {
+      if (paymentMethod === "telr" || paymentMethod === "applepay") {
         // Initiate Telr Payment
         const telrResponse = await fetch("/api/payment/telr", {
           method: "POST",
@@ -510,7 +510,8 @@ export default function App() {
             currency: "SAR",
             customer: shippingDetails,
             returnUrl: `${window.location.origin}/?telr_ref={ref}&order_id=${wcOrder.id}`,
-            cancelUrl: `${window.location.origin}/?telr_status=cancel`
+            cancelUrl: `${window.location.origin}/?telr_status=cancel`,
+            payMethod: paymentMethod === "applepay" ? "applepay" : undefined
           })
         });
 
@@ -1782,6 +1783,13 @@ function CheckoutPage({
 
   const [selectedShipping, setSelectedShipping] = useState<any>(null);
   const [paymentMethod, setPaymentMethod] = useState<string>("telr");
+  const [isApplePaySupported, setIsApplePaySupported] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).ApplePaySession) {
+      setIsApplePaySupported(true);
+    }
+  }, []);
   const [isCompany, setIsCompany] = useState(false);
   const [companyInfo, setCompanyInfo] = useState({
     name: '',
@@ -2126,6 +2134,22 @@ function CheckoutPage({
                     <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" className="h-4" alt="Mastercard" />
                   </div>
                 </div>
+
+                {isApplePaySupported && (
+                  <div 
+                    onClick={() => setPaymentMethod("applepay")}
+                    className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "applepay" ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
+                  >
+                    <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "applepay" ? "border-black bg-white" : "border-gray-200 bg-white"}`} />
+                    <div className="flex-1">
+                      <p className="font-bold">Apple Pay</p>
+                      <p className="text-xs text-gray-500">دفع سريع وآمن عبر Apple Pay</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/Apple_Pay_logo.svg" className="h-8" alt="Apple Pay" />
+                    </div>
+                  </div>
+                )}
 
                 <div 
                   onClick={() => setPaymentMethod("cod")}
