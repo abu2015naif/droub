@@ -1481,8 +1481,9 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                       name="whatsapp"
                       defaultValue={isEditingShowroom?.whatsapp}
                       required
-                      className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-5 py-4 focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                      className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-5 py-4 focus:ring-2 focus:ring-red-500 outline-none transition-all text-left"
                       placeholder="966500000000"
+                      dir="ltr"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1491,8 +1492,9 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                       name="phone"
                       defaultValue={isEditingShowroom?.phone}
                       required
-                      className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-5 py-4 focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                      className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-5 py-4 focus:ring-2 focus:ring-red-500 outline-none transition-all text-left"
                       placeholder="0110000000"
+                      dir="ltr"
                     />
                   </div>
                 </div>

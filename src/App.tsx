@@ -598,7 +598,7 @@ export default function App() {
       <div className="bg-red-700 text-white py-2 px-4 hidden md:block">
         <div className="max-w-7xl mx-auto flex justify-between items-center text-sm">
           <div className="flex gap-6">
-            <span className="flex items-center gap-2"><Phone size={14} /> 920000000</span>
+            <span className="flex items-center gap-2"><Phone size={14} /> <span dir="ltr">058 041 0063</span></span>
             <span className="flex items-center gap-2"><Mail size={14} /> info@droubalsalamah.com</span>
           </div>
           <div className="flex items-center gap-2">
@@ -1360,11 +1360,11 @@ export default function App() {
               <ul className="space-y-4 text-gray-400">
                 <li className="flex items-start gap-3">
                   <MapPin size={20} className="text-red-500 shrink-0" />
-                  <span>الرياض، حي الملز، شارع الستين</span>
+                  <span>الفرع الرئيسي الرياض شارع الظهران</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <Phone size={20} className="text-red-500 shrink-0" />
-                  <span>920000000</span>
+                  <span dir="ltr">058 041 0063</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <Mail size={20} className="text-red-500 shrink-0" />
@@ -1472,7 +1472,7 @@ export default function App() {
         </button>
 
         <a 
-          href="https://wa.me/966920000000" 
+          href="https://wa.me/966580410063" 
           target="_blank" 
           rel="noopener noreferrer"
           className="flex flex-col items-center gap-1 min-w-[60px] text-green-600"
@@ -1483,6 +1483,20 @@ export default function App() {
           <span className="text-[10px] font-bold">واتساب</span>
         </a>
       </div>
+
+      {/* Floating WhatsApp Button */}
+      <a 
+        href="https://wa.me/966580410063" 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="fixed bottom-28 lg:bottom-10 right-6 z-40 bg-green-500 text-white p-4 rounded-full shadow-2xl hover:bg-green-600 transition-all hover:scale-110 flex items-center justify-center group"
+        title="تواصل معنا عبر واتساب"
+      >
+        <MessageCircle size={28} className="fill-white" />
+        <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 whitespace-nowrap font-bold mr-0 group-hover:mr-2">
+          تواصل معنا
+        </span>
+      </a>
     </div>
   );
 }
@@ -2393,7 +2407,7 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                 <button 
                   onClick={() => {
                     const message = `السلام عليكم، أرغب في الاستفسار عن منتج: ${product.name}\nالسعر: ${product.price} ر.س\nالرابط: ${window.location.origin}/?product=${product.id}`;
-                    window.open(`https://wa.me/966920000000?text=${encodeURIComponent(message)}`, '_blank');
+                    window.open(`https://wa.me/966580410063?text=${encodeURIComponent(message)}`, '_blank');
                   }}
                   className="flex-1 bg-green-500 text-white py-4 rounded-2xl font-bold text-lg hover:bg-green-600 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-3"
                 >
@@ -2508,6 +2522,7 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
       let message = "حدث خطأ في إرسال الرمز. يرجى المحاولة مرة أخرى.";
       if (error.code === 'auth/invalid-phone-number') message = "رقم الجوال غير صحيح.";
       if (error.code === 'auth/too-many-requests') message = "تم إرسال الكثير من الطلبات، يرجى المحاولة لاحقاً.";
+      if (error.code === 'auth/unauthorized-domain') message = "هذا النطاق (Domain) غير مصرح له باستخدام خدمة التحقق بالجوال. يرجى التأكد من إضافة droubalsalamah.com و www.droubalsalamah.com في لوحة تحكم Firebase.";
       if (error.code === 'auth/internal-error' || error.message.includes('-39')) {
         message = "حدث خطأ في نظام التحقق. يرجى المحاولة مرة أخرى أو تحديث الصفحة.";
         if (recaptchaVerifierRef.current) {
@@ -2515,6 +2530,12 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
           recaptchaVerifierRef.current = null;
         }
       }
+      
+      // Show error code for debugging if it's something else
+      if (!['auth/invalid-phone-number', 'auth/too-many-requests', 'auth/unauthorized-domain', 'auth/internal-error'].includes(error.code)) {
+        message += ` (Error Code: ${error.code})`;
+      }
+      
       alert(message);
     } finally {
       setLoading(false);
