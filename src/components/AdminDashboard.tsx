@@ -340,8 +340,11 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     }
   };
 
+  const isGatewayEnabled = (g: any) => g.enabled === true || g.enabled === 'yes' || g.enabled === '1';
+
   const togglePaymentGateway = async (gateway: any) => {
-    await updatePaymentGateway(gateway.id, { enabled: !gateway.enabled });
+    const currentlyEnabled = isGatewayEnabled(gateway);
+    await updatePaymentGateway(gateway.id, { enabled: !currentlyEnabled });
   };
 
   const fetchProducts = async () => {
@@ -1634,14 +1637,14 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                         </div>
                         <div className="flex items-center gap-4">
                           <div className="flex items-center gap-2">
-                            <span className={`text-sm font-medium ${gateway.enabled ? 'text-green-600' : 'text-gray-400'}`}>
-                              {gateway.enabled ? 'مفعل' : 'معطل'}
+                            <span className={`text-sm font-medium ${isGatewayEnabled(gateway) ? 'text-green-600' : 'text-gray-400'}`}>
+                              {isGatewayEnabled(gateway) ? 'مفعل' : 'معطل'}
                             </span>
                             <button 
                               onClick={() => togglePaymentGateway(gateway)}
-                              className={`w-12 h-6 rounded-full transition-colors relative ${gateway.enabled ? 'bg-green-500' : 'bg-gray-300'}`}
+                              className={`w-12 h-6 rounded-full transition-colors relative ${isGatewayEnabled(gateway) ? 'bg-green-500' : 'bg-gray-300'}`}
                             >
-                              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${gateway.enabled ? 'left-7' : 'left-1'}`} />
+                              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${isGatewayEnabled(gateway) ? 'left-7' : 'left-1'}`} />
                             </button>
                           </div>
                           <button 

@@ -2017,11 +2017,17 @@ function CheckoutPage({
   });
 
   const [selectedShipping, setSelectedShipping] = useState<any>(null);
+  const isGatewayEnabled = (id: string) => {
+    const g = paymentGateways.find(gw => gw.id === id);
+    if (!g) return false;
+    return g.enabled === true || g.enabled === 'yes' || g.enabled === '1';
+  };
+
   const [paymentMethod, setPaymentMethod] = useState<string>(() => {
-    if (paymentGateways.find(g => g.id === 'telr' && g.enabled)) return "telr";
-    if (paymentGateways.find(g => g.id === 'applepay' && g.enabled)) return "applepay";
-    if (paymentGateways.find(g => g.id === 'cod' && g.enabled)) return "cod";
-    if (paymentGateways.find(g => g.id === 'bacs' && g.enabled)) return "bank_transfer";
+    if (isGatewayEnabled('telr')) return "telr";
+    if (isGatewayEnabled('applepay')) return "applepay";
+    if (isGatewayEnabled('cod')) return "cod";
+    if (isGatewayEnabled('bacs')) return "bank_transfer";
     return "telr";
   });
   const [isApplePaySupported, setIsApplePaySupported] = useState(false);
@@ -2033,12 +2039,14 @@ function CheckoutPage({
   }, []);
   useEffect(() => {
     if (paymentGateways.length > 0) {
-      const isCurrentEnabled = paymentGateways.find(g => (g.id === paymentMethod || (paymentMethod === 'bank_transfer' && g.id === 'bacs')) && g.enabled);
+      const currentGateway = paymentGateways.find(g => g.id === paymentMethod || (paymentMethod === 'bank_transfer' && g.id === 'bacs'));
+      const isCurrentEnabled = currentGateway && (currentGateway.enabled === true || currentGateway.enabled === 'yes' || currentGateway.enabled === '1');
+      
       if (!isCurrentEnabled) {
-        if (paymentGateways.find(g => g.id === 'telr' && g.enabled)) setPaymentMethod("telr");
-        else if (paymentGateways.find(g => g.id === 'applepay' && g.enabled)) setPaymentMethod("applepay");
-        else if (paymentGateways.find(g => g.id === 'cod' && g.enabled)) setPaymentMethod("cod");
-        else if (paymentGateways.find(g => g.id === 'bacs' && g.enabled)) setPaymentMethod("bank_transfer");
+        if (isGatewayEnabled('telr')) setPaymentMethod("telr");
+        else if (isGatewayEnabled('applepay')) setPaymentMethod("applepay");
+        else if (isGatewayEnabled('cod')) setPaymentMethod("cod");
+        else if (isGatewayEnabled('bacs')) setPaymentMethod("bank_transfer");
       }
     }
   }, [paymentGateways]);
@@ -2373,7 +2381,7 @@ function CheckoutPage({
             <div className="bg-white border border-gray-100 rounded-3xl p-8 shadow-sm space-y-6">
               <h3 className="text-xl font-bold border-b pb-4">طريقة الدفع</h3>
               <div className="space-y-3">
-                {paymentGateways.find(g => g.id === 'telr' && g.enabled) && (
+                {isGatewayEnabled('telr') && (
                   <div 
                     onClick={() => setPaymentMethod("telr")}
                     className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "telr" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
@@ -2390,7 +2398,7 @@ function CheckoutPage({
                   </div>
                 )}
 
-                {isApplePaySupported && paymentGateways.find(g => g.id === 'telr' && g.enabled) && (
+                {isApplePaySupported && isGatewayEnabled('telr') && (
                   <div 
                     onClick={() => setPaymentMethod("applepay")}
                     className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "applepay" ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
@@ -2406,7 +2414,7 @@ function CheckoutPage({
                   </div>
                 )}
 
-                {paymentGateways.find(g => g.id === 'cod' && g.enabled) && (
+                {isGatewayEnabled('cod') && (
                   <div 
                     onClick={() => setPaymentMethod("cod")}
                     className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "cod" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
@@ -2419,7 +2427,7 @@ function CheckoutPage({
                   </div>
                 )}
 
-                {paymentGateways.find(g => g.id === 'bacs' && g.enabled) && (
+                {isGatewayEnabled('bacs') && (
                   <div 
                     onClick={() => setPaymentMethod("bank_transfer")}
                     className={`flex flex-col gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "bank_transfer" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
