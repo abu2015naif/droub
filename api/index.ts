@@ -338,6 +338,12 @@ async function startServer() {
       params.append("return_auth", returnUrl);
       params.append("return_can", cancelUrl);
       params.append("return_decl", cancelUrl);
+      
+      // Add ivp_ prefixed return URLs as well for compatibility
+      params.append("ivp_return_auth", returnUrl);
+      params.append("ivp_return_can", cancelUrl);
+      params.append("ivp_return_decl", cancelUrl);
+      
       params.append("ivp_trantype", "sale");
       
       if (payMethod) {
@@ -361,10 +367,11 @@ async function startServer() {
       });
       
       if (response.data.order && response.data.order.url) {
+        console.log(`✅ Telr payment initiated successfully for Order #${orderId}. Ref: ${response.data.order.ref}`);
         res.json({ url: response.data.order.url, ref: response.data.order.ref });
       } else {
-        console.error("Telr API Error Response:", response.data);
-        const errorMsg = response.data.error?.note || response.data.error?.message || "Request authentication failed";
+        console.error("❌ Telr API Error Response:", JSON.stringify(response.data, null, 2));
+        const errorMsg = response.data.error?.note || response.data.error?.message || "Request authentication failed. Please check your Telr Store ID and API Key.";
         res.status(400).json({ error: errorMsg, details: response.data });
       }
     } catch (error: any) {

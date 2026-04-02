@@ -627,6 +627,7 @@ export default function App() {
       });
 
       if (paymentMethod === "telr" || paymentMethod === "applepay") {
+        console.log(`Initiating Telr payment for WC Order #${wcOrder.id}...`);
         // Initiate Telr Payment
         const telrResponse = await fetch("/api/payment/telr", {
           method: "POST",
@@ -644,10 +645,12 @@ export default function App() {
 
         const telrData = await telrResponse.json();
         if (telrResponse.ok && telrData.url) {
+          console.log("Telr payment URL received, redirecting...", telrData.url);
           window.location.href = telrData.url;
           return;
         } else {
-          const errorMsg = telrData.error || "Failed to initiate Telr payment";
+          const errorMsg = telrData.error || "فشل في بدء عملية الدفع عبر تلر. يرجى التأكد من إعدادات المتجر.";
+          console.error("Telr Error:", telrData);
           throw new Error(errorMsg);
         }
       }
