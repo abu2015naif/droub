@@ -132,6 +132,7 @@ export default function App() {
   const [homeSettings, setHomeSettings] = useState<{ productsPerPage: number }>({ productsPerPage: 8 });
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [paymentGateways, setPaymentGateways] = useState<any[]>([]);
+  const [loadingGateways, setLoadingGateways] = useState(true);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Save favorites to localStorage whenever it changes
@@ -177,6 +178,7 @@ export default function App() {
 
   useEffect(() => {
     const fetchPaymentGateways = async () => {
+      setLoadingGateways(true);
       try {
         const res = await fetch("/api/payment-gateways");
         if (res.ok) {
@@ -187,6 +189,8 @@ export default function App() {
         }
       } catch (error) {
         console.error("Error fetching payment gateways:", error);
+      } finally {
+        setLoadingGateways(false);
       }
     };
     fetchPaymentGateways();
@@ -1127,6 +1131,7 @@ export default function App() {
             showrooms={showrooms}
             bankAccounts={bankAccounts}
             paymentGateways={paymentGateways}
+            loadingGateways={loadingGateways}
           />
         ) : activeTab === "home" ? (
           <>
@@ -1990,6 +1995,7 @@ interface CheckoutPageProps {
   showrooms: Showroom[];
   bankAccounts: BankDetails[];
   paymentGateways: any[];
+  loadingGateways: boolean;
 }
 
 function CheckoutPage({ 
@@ -2003,7 +2009,8 @@ function CheckoutPage({
   onRemoveItem,
   showrooms,
   bankAccounts,
-  paymentGateways
+  paymentGateways,
+  loadingGateways
 }: CheckoutPageProps) {
   const [formData, setFormData] = useState({
     firstName: user?.displayName?.split(' ')[0] || '',
@@ -2381,140 +2388,173 @@ function CheckoutPage({
             <div className="bg-white border border-gray-100 rounded-3xl p-8 shadow-sm space-y-6">
               <h3 className="text-xl font-bold border-b pb-4">طريقة الدفع</h3>
               <div className="space-y-3">
-                {isGatewayEnabled('telr') && (
-                  <div 
-                    onClick={() => setPaymentMethod("telr")}
-                    className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "telr" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
-                  >
-                    <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "telr" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
-                    <div className="flex-1">
-                      <p className="font-bold">بطاقة مدى / فيزا / ماستركارد</p>
-                      <p className="text-xs text-gray-500">دفع آمن عبر بوابة Telr</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" className="h-4" alt="Visa" referrerPolicy="no-referrer" />
-                      <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" className="h-4" alt="Mastercard" referrerPolicy="no-referrer" />
-                    </div>
+                {loadingGateways ? (
+                  <div className="flex flex-col items-center py-12 text-gray-400">
+                    <div className="w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full animate-spin mb-4" />
+                    <p className="font-bold">جاري تحميل طرق الدفع...</p>
                   </div>
-                )}
-
-                {isApplePaySupported && isGatewayEnabled('telr') && (
-                  <div 
-                    onClick={() => setPaymentMethod("applepay")}
-                    className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "applepay" ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
-                  >
-                    <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "applepay" ? "border-black bg-white" : "border-gray-200 bg-white"}`} />
-                    <div className="flex-1">
-                      <p className="font-bold">Apple Pay</p>
-                      <p className="text-xs text-gray-500">دفع سريع وآمن عبر Apple Pay</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/Apple_Pay_logo.svg" className="h-8" alt="Apple Pay" referrerPolicy="no-referrer" />
-                    </div>
+                ) : paymentGateways.filter(g => isGatewayEnabled(g.id)).length === 0 ? (
+                  <div className="p-12 text-center border-2 border-dashed border-gray-100 rounded-3xl text-gray-400">
+                    <AlertCircle className="mx-auto mb-4 text-gray-300" size={48} />
+                    <p className="font-bold text-lg mb-2">لا توجد طرق دفع مفعّلة</p>
+                    <p className="text-sm">يرجى التأكد من تفعيل طرق الدفع في لوحة تحكم ووكومرس</p>
                   </div>
-                )}
-
-                {isGatewayEnabled('cod') && (
-                  <div 
-                    onClick={() => setPaymentMethod("cod")}
-                    className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "cod" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
-                  >
-                    <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "cod" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
-                    <div>
-                      <p className="font-bold">الدفع عند الاستلام (COD)</p>
-                      <p className="text-xs text-gray-500">ادفع نقداً عند استلام طلبك من مندوب التوصيل</p>
-                    </div>
-                  </div>
-                )}
-
-                {isGatewayEnabled('bacs') && (
-                  <div 
-                    onClick={() => setPaymentMethod("bank_transfer")}
-                    className={`flex flex-col gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "bank_transfer" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "bank_transfer" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
-                      <div className="flex-1">
-                        <p className="font-bold">حوالة بنكية</p>
-                        <p className="text-xs text-gray-500">قم بالتحويل للحساب البنكي وارفع إيصال التحويل</p>
-                      </div>
-                      <CreditCard className="text-gray-400" />
-                    </div>
-
-                    {paymentMethod === "bank_transfer" && (
-                      <div className="mt-4 p-4 bg-white rounded-xl border border-red-100 space-y-4 animate-in fade-in slide-in-from-top-2">
-                        <div className="space-y-3">
-                          <label className="text-sm font-bold text-gray-600">اختر الحساب البنكي للتحويل</label>
-                          <div className="grid grid-cols-1 gap-3">
-                            {bankAccounts.filter(b => b.active).map(account => (
-                              <div 
-                                key={account.id}
-                                onClick={() => setSelectedBankAccount(account)}
-                                className={`p-4 border-2 rounded-2xl cursor-pointer transition-all ${selectedBankAccount?.id === account.id ? 'border-red-600 bg-red-50' : 'border-gray-100 hover:border-gray-200'}`}
-                              >
-                                <div className="flex justify-between items-center mb-2">
-                                  <p className="font-bold text-red-700">{account.bankName}</p>
-                                  <div className={`w-5 h-5 rounded-full border-4 ${selectedBankAccount?.id === account.id ? 'border-red-600 bg-white' : 'border-gray-200 bg-white'}`} />
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                                  <div>
-                                    <p className="text-gray-500">اسم الحساب:</p>
-                                    <p className="font-bold">{account.accountName}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-gray-500">رقم الحساب:</p>
-                                    <p className="font-bold">{account.accountNumber}</p>
-                                  </div>
-                                  <div className="md:col-span-2">
-                                    <p className="text-gray-500">الآيبان (IBAN):</p>
-                                    <p className="font-bold">{account.iban}</p>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                ) : (
+                  <>
+                    {isGatewayEnabled('telr') && (
+                      <div 
+                        onClick={() => setPaymentMethod("telr")}
+                        className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "telr" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
+                      >
+                        <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "telr" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
+                        <div className="flex-1">
+                          <p className="font-bold">بطاقة مدى / فيزا / ماستركارد</p>
+                          <p className="text-xs text-gray-500">دفع آمن عبر بوابة Telr</p>
                         </div>
-
-                        <div className="space-y-3 pt-4 border-t border-gray-50">
-                          <div className="space-y-1">
-                            <label className="text-xs font-bold text-gray-600">اسم صاحب الحساب المحول منه</label>
-                            <input 
-                              value={receiptHolderName}
-                              onChange={e => setReceiptHolderName(e.target.value)}
-                              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
-                              placeholder="أدخل الاسم الثلاثي"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-bold text-gray-600">إرفاق إيصال التحويل (صورة أو PDF)</label>
-                            <div className="relative">
-                              <input 
-                                type="file"
-                                accept="image/*,.pdf"
-                                onChange={handleFileChange}
-                                className="hidden"
-                                id="receipt-upload"
-                              />
-                              <label 
-                                htmlFor="receipt-upload"
-                                className="flex items-center justify-center gap-2 w-full bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg py-4 cursor-pointer hover:bg-gray-100 transition-all"
-                              >
-                                {receiptFile ? (
-                                  <span className="text-green-600 font-bold flex items-center gap-2">
-                                    <ShieldCheck size={16} /> تم اختيار الملف
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-400 flex items-center gap-2">
-                                    <Upload size={16} /> اضغط لرفع الملف
-                                  </span>
-                                )}
-                              </label>
-                            </div>
-                          </div>
+                        <div className="flex gap-2">
+                          <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" className="h-4" alt="Visa" referrerPolicy="no-referrer" />
+                          <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" className="h-4" alt="Mastercard" referrerPolicy="no-referrer" />
                         </div>
                       </div>
                     )}
-                  </div>
+
+                    {isApplePaySupported && isGatewayEnabled('telr') && (
+                      <div 
+                        onClick={() => setPaymentMethod("applepay")}
+                        className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "applepay" ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
+                      >
+                        <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "applepay" ? "border-black bg-white" : "border-gray-200 bg-white"}`} />
+                        <div className="flex-1">
+                          <p className="font-bold">Apple Pay</p>
+                          <p className="text-xs text-gray-500">دفع سريع وآمن عبر Apple Pay</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/Apple_Pay_logo.svg" className="h-8" alt="Apple Pay" referrerPolicy="no-referrer" />
+                        </div>
+                      </div>
+                    )}
+
+                    {isGatewayEnabled('cod') && (
+                      <div 
+                        onClick={() => setPaymentMethod("cod")}
+                        className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "cod" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
+                      >
+                        <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "cod" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
+                        <div>
+                          <p className="font-bold">الدفع عند الاستلام (COD)</p>
+                          <p className="text-xs text-gray-500">ادفع نقداً عند استلام طلبك من مندوب التوصيل</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {isGatewayEnabled('bacs') && (
+                      <div 
+                        onClick={() => setPaymentMethod("bank_transfer")}
+                        className={`flex flex-col gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "bank_transfer" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "bank_transfer" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
+                          <div className="flex-1">
+                            <p className="font-bold">حوالة بنكية</p>
+                            <p className="text-xs text-gray-500">قم بالتحويل للحساب البنكي وارفع إيصال التحويل</p>
+                          </div>
+                          <CreditCard className="text-gray-400" />
+                        </div>
+
+                        {paymentMethod === "bank_transfer" && (
+                          <div className="mt-4 p-4 bg-white rounded-xl border border-red-100 space-y-4 animate-in fade-in slide-in-from-top-2">
+                            <div className="space-y-3">
+                              <label className="text-sm font-bold text-gray-600">اختر الحساب البنكي للتحويل</label>
+                              <div className="grid grid-cols-1 gap-3">
+                                {bankAccounts.filter(b => b.active).map(account => (
+                                  <div 
+                                    key={account.id}
+                                    onClick={() => setSelectedBankAccount(account)}
+                                    className={`p-4 border-2 rounded-2xl cursor-pointer transition-all ${selectedBankAccount?.id === account.id ? 'border-red-600 bg-red-50' : 'border-gray-100 hover:border-gray-200'}`}
+                                  >
+                                    <div className="flex justify-between items-center mb-2">
+                                      <p className="font-bold text-red-700">{account.bankName}</p>
+                                      <div className={`w-5 h-5 rounded-full border-4 ${selectedBankAccount?.id === account.id ? 'border-red-600 bg-white' : 'border-gray-200 bg-white'}`} />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                      <div>
+                                        <p className="text-gray-500">اسم الحساب:</p>
+                                        <p className="font-bold">{account.accountName}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-gray-500">رقم الحساب:</p>
+                                        <p className="font-bold">{account.accountNumber}</p>
+                                      </div>
+                                      <div className="md:col-span-2">
+                                        <p className="text-gray-500">الآيبان (IBAN):</p>
+                                        <p className="font-bold">{account.iban}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="space-y-3 pt-4 border-t border-gray-50">
+                              <div className="space-y-1">
+                                <label className="text-xs font-bold text-gray-600">اسم صاحب الحساب المحول منه</label>
+                                <input 
+                                  value={receiptHolderName}
+                                  onChange={e => setReceiptHolderName(e.target.value)}
+                                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
+                                  placeholder="أدخل الاسم الثلاثي"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-xs font-bold text-gray-600">إرفاق إيصال التحويل (صورة أو PDF)</label>
+                                <div className="relative">
+                                  <input 
+                                    type="file"
+                                    accept="image/*,.pdf"
+                                    onChange={handleFileChange}
+                                    className="hidden"
+                                    id="receipt-upload"
+                                  />
+                                  <label 
+                                    htmlFor="receipt-upload"
+                                    className="flex items-center justify-center gap-2 w-full bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg py-4 cursor-pointer hover:bg-gray-100 transition-all"
+                                  >
+                                    {receiptFile ? (
+                                      <span className="text-green-600 font-bold flex items-center gap-2">
+                                        <ShieldCheck size={16} /> تم اختيار الملف
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-400 flex items-center gap-2">
+                                        <Upload size={16} /> اضغط لرفع الملف
+                                      </span>
+                                    )}
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Fallback for other enabled gateways */}
+                    {paymentGateways
+                      .filter(g => isGatewayEnabled(g.id) && !['telr', 'applepay', 'cod', 'bacs'].includes(g.id))
+                      .map(gateway => (
+                        <div 
+                          key={gateway.id}
+                          onClick={() => setPaymentMethod(gateway.id)}
+                          className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === gateway.id ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
+                        >
+                          <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === gateway.id ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
+                          <div className="flex-1">
+                            <p className="font-bold">{gateway.title}</p>
+                            <p className="text-xs text-gray-500">{gateway.description || "طريقة دفع آمنة"}</p>
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </>
                 )}
               </div>
             </div>
