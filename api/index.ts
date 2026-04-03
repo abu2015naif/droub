@@ -327,6 +327,10 @@ async function startServer() {
         return res.status(500).json({ error: "Telr configuration missing" });
       }
 
+      // Ensure amount is formatted to 2 decimal places as required by many gateways
+      const formattedAmount = parseFloat(amount.toString()).toFixed(2);
+      const formattedCurrency = (currency || "SAR").toUpperCase();
+
       // Manually construct the body to have full control over encoding
       // Telr sometimes has issues with standard URL encoding of special characters in the authkey
       const data: Record<string, string> = {
@@ -335,8 +339,8 @@ async function startServer() {
         ivp_authkey: apiKey,
         ivp_cart: orderId.toString(),
         ivp_test: testMode,
-        ivp_amount: amount.toString(),
-        ivp_currency: currency || "SAR",
+        ivp_amount: formattedAmount,
+        ivp_currency: formattedCurrency,
         ivp_desc: `Order #${orderId}`,
         return_auth: returnUrl,
         return_can: cancelUrl,
@@ -361,7 +365,7 @@ async function startServer() {
         .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
         .join('&');
 
-      console.log(`📡 Initiating Telr payment for Order #${orderId}, Amount: ${amount} ${currency}`);
+      console.log(`📡 Initiating Telr payment for Order #${orderId}, Amount: ${formattedAmount} ${formattedCurrency}`);
       console.log(`   Store ID: ${storeId}, Test Mode: ${testMode}`);
       
       // Try to get the server's public IP to help the user with whitelisting
