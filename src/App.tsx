@@ -633,11 +633,11 @@ export default function App() {
         createdAt: new Date().toISOString()
       });
 
-      if (paymentMethod === "telr" || paymentMethod === "applepay") {
+      if (paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay")) {
         // التكامل المثالي: التوجيه إلى صفحة الدفع الرسمية في ووكومرس
         // نستخدم payment_url المرجّع من API ووكومرس مباشرة
         const paymentUrl = wcOrder.payment_url || `https://api.droubalsalamah.com/checkout/order-pay/${wcOrder.id}/?pay_for_order=true&key=${wcOrder.order_key}`;
-        console.log("Redirecting to official WooCommerce payment page:", paymentUrl);
+        console.log("Redirecting to official WooCommerce payment page for method:", paymentMethod, paymentUrl);
         window.location.href = paymentUrl;
         return;
       }
@@ -2015,17 +2015,22 @@ function CheckoutPage({
 
   const [selectedShipping, setSelectedShipping] = useState<any>(null);
   const isGatewayEnabled = (id: string) => {
-    const g = paymentGateways.find(gw => gw.id === id);
+    const g = paymentGateways.find(gw => gw.id === id || gw.id.toLowerCase().includes(id.toLowerCase()));
     if (!g) return false;
     return g.enabled === true || g.enabled === 'yes' || g.enabled === '1';
   };
 
+  const getActualGatewayId = (id: string) => {
+    const g = paymentGateways.find(gw => gw.id === id || gw.id.toLowerCase().includes(id.toLowerCase()));
+    return g ? g.id : id;
+  };
+
   const [paymentMethod, setPaymentMethod] = useState<string>(() => {
-    if (isGatewayEnabled('telr')) return "telr";
-    if (isGatewayEnabled('applepay')) return "applepay";
+    if (isGatewayEnabled('telr')) return getActualGatewayId('telr');
+    if (isGatewayEnabled('applepay')) return getActualGatewayId('applepay');
     if (isGatewayEnabled('cod')) return "cod";
     if (isGatewayEnabled('bacs')) return "bank_transfer";
-    return "telr";
+    return "cod";
   });
   const [isApplePaySupported, setIsApplePaySupported] = useState(false);
 
@@ -2393,10 +2398,10 @@ function CheckoutPage({
                   <>
                     {isGatewayEnabled('telr') && (
                       <div 
-                        onClick={() => setPaymentMethod("telr")}
-                        className={`flex items-center gap-4 p-5 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "telr" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
+                        onClick={() => setPaymentMethod(getActualGatewayId('telr'))}
+                        className={`flex items-center gap-4 p-5 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod.toLowerCase().includes("telr") ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
                       >
-                        <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "telr" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
+                        <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod.toLowerCase().includes("telr") ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
                         <div className="flex-1">
                           <p className="font-bold text-lg">الدفع باستخدام البطاقات الائتمانية</p>
                           <p className="text-sm text-gray-500">دفع باستخدام بطاقات فيزا / ماستر كارد / مدى</p>
@@ -2410,12 +2415,12 @@ function CheckoutPage({
                       </div>
                     )}
 
-                    {isApplePaySupported && isGatewayEnabled('telr') && (
+                    {isApplePaySupported && isGatewayEnabled('applepay') && (
                       <div 
-                        onClick={() => setPaymentMethod("applepay")}
-                        className={`flex items-center gap-4 p-5 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "applepay" ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
+                        onClick={() => setPaymentMethod(getActualGatewayId('applepay'))}
+                        className={`flex items-center gap-4 p-5 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod.toLowerCase().includes("applepay") ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
                       >
-                        <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "applepay" ? "border-black bg-white" : "border-gray-200 bg-white"}`} />
+                        <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod.toLowerCase().includes("applepay") ? "border-black bg-white" : "border-gray-200 bg-white"}`} />
                         <div className="flex-1">
                           <p className="font-bold text-lg">Apple Pay</p>
                           <p className="text-sm text-gray-500">دفع سريع وآمن عبر Apple Pay</p>
@@ -2557,7 +2562,7 @@ function CheckoutPage({
               className="w-full bg-red-600 text-white py-5 rounded-2xl font-bold text-xl shadow-xl shadow-red-100 hover:bg-red-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
             >
               {loading ? <Clock className="animate-spin" /> : <ShieldCheck />}
-              {(paymentMethod === "telr" || paymentMethod === "applepay") ? "المتابعة للدفع" : "تأكيد الطلب"}
+              {(paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay")) ? "المتابعة للدفع" : "تأكيد الطلب"}
             </button>
           </form>
         </div>
