@@ -634,12 +634,49 @@ export default function App() {
       });
 
       if (paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay")) {
-        // التكامل المثالي: التوجيه إلى صفحة الدفع الرسمية في ووكومرس
-        // نستخدم payment_url المرجّع من API ووكومرس مباشرة
-        const paymentUrl = wcOrder.payment_url || `https://api.droubalsalamah.com/checkout/order-pay/${wcOrder.id}/?pay_for_order=true&key=${wcOrder.order_key}`;
-        console.log("Redirecting to official WooCommerce payment page for method:", paymentMethod, paymentUrl);
-        window.location.href = paymentUrl;
-        return;
+        try {
+          console.log("Initiating direct Telr payment for order:", wcOrder.id);
+          const telrResponse = await fetch("/api/payment/telr", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderId: wcOrder.id,
+              amount: wcOrder.total,
+              currency: wcOrder.currency || "SAR",
+              customer: {
+                firstName: shippingDetails.firstName,
+                lastName: shippingDetails.lastName,
+                email: currentUser?.email || shippingDetails.email,
+                phone: shippingDetails.phone,
+                address: shippingDetails.address,
+                city: shippingDetails.city
+              },
+              returnUrl: `${window.location.origin}?payment=success&order_id=${wcOrder.id}`,
+              cancelUrl: `${window.location.origin}?payment=cancel&order_id=${wcOrder.id}`,
+              payMethod: paymentMethod.toLowerCase().includes("applepay") ? "applepay" : "creditcard"
+            })
+          });
+
+          if (!telrResponse.ok) {
+            const errorData = await telrResponse.json();
+            throw new Error(errorData.error || "Failed to initiate Telr payment");
+          }
+
+          const telrData = await telrResponse.json();
+          if (telrData.url) {
+            console.log("Redirecting directly to Telr gateway:", telrData.url);
+            window.location.href = telrData.url;
+            return;
+          } else {
+            throw new Error("No payment URL received from Telr");
+          }
+        } catch (telrError: any) {
+          console.error("Telr direct initiation failed, falling back to WooCommerce page:", telrError);
+          // Fallback to WooCommerce page if direct initiation fails
+          const paymentUrl = wcOrder.payment_url || `https://api.droubalsalamah.com/checkout/order-pay/${wcOrder.id}/?pay_for_order=true&key=${wcOrder.order_key}`;
+          window.location.href = paymentUrl;
+          return;
+        }
       }
 
       setCart([]);
@@ -661,6 +698,7 @@ export default function App() {
     const telrRef = urlParams.get('telr_ref');
     const orderId = urlParams.get('order_id');
     const telrStatus = urlParams.get('telr_status');
+    const paymentStatus = urlParams.get('payment');
 
     if (telrRef && orderId) {
       const checkPayment = async () => {
@@ -688,7 +726,24 @@ export default function App() {
         }
       };
       checkPayment();
-    } else if (telrStatus === 'cancel') {
+    } else if (paymentStatus === 'success' && orderId) {
+      // Direct return from Telr success
+      const finalizeSuccess = async () => {
+        try {
+          await fetch(`/api/orders/${orderId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'processing', set_paid: true })
+          });
+          alert("تمت عملية الدفع بنجاح! شكراً لتسوقكم.");
+          setCart([]);
+          window.history.replaceState({}, document.title, "/");
+        } catch (error) {
+          console.error("Error finalizing success payment:", error);
+        }
+      };
+      finalizeSuccess();
+    } else if (telrStatus === 'cancel' || paymentStatus === 'cancel') {
       alert("تم إلغاء عملية الدفع.");
       window.history.replaceState({}, document.title, "/");
     }
