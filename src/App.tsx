@@ -566,24 +566,24 @@ export default function App() {
                              paymentMethod === "bank_transfer" ? "حوالة بنكية" :
                              "بطاقة مدى / فيزا / ماستركارد",
         set_paid: false,
-        customer_note: extraData?.isCompany ? `طلب لشركة: ${extraData.companyInfo.name} - ضريبي: ${extraData.companyInfo.taxNumber} - سجل: ${extraData.companyInfo.commercialRegister}` : "",
+        customer_note: extraData?.isCompany ? `طلب لشركة: ${extraData.companyInfo?.name || ""} - ضريبي: ${extraData.companyInfo?.taxNumber || ""} - سجل: ${extraData.companyInfo?.commercialRegister || ""}` : "",
         billing: {
-          first_name: shippingDetails.firstName,
-          last_name: shippingDetails.lastName,
-          address_1: shippingDetails.address,
-          city: shippingDetails.city,
+          first_name: shippingDetails.firstName || "",
+          last_name: shippingDetails.lastName || "",
+          address_1: shippingDetails.address || "",
+          city: shippingDetails.city || "",
           state: shippingDetails.state || "Riyadh",
           postcode: shippingDetails.postcode || "12345",
           country: "SA",
-          email: user?.email || shippingDetails.email,
-          phone: shippingDetails.phone
+          email: currentUser?.email || shippingDetails.email || "",
+          phone: shippingDetails.phone || ""
         },
         line_items: cart.map(item => ({
           product_id: item.id,
           quantity: item.quantity,
           meta_data: item.selectedAttributes ? Object.entries(item.selectedAttributes).map(([key, value]) => ({
             key,
-            value
+            value: value || ""
           })) : []
         })),
         shipping_lines: selectedShipping ? [
@@ -610,49 +610,36 @@ export default function App() {
       // 2. Also save to Firestore for local tracking
       await addDoc(collection(db, "orders"), {
         userId: currentUser?.uid || "guest",
-        customerName: `${shippingDetails.firstName} ${shippingDetails.lastName}`,
-        customerEmail: currentUser?.email || shippingDetails.email,
-        items: cart,
-        total: parseFloat(wcOrder.total),
+        customerName: `${shippingDetails.firstName || ""} ${shippingDetails.lastName || ""}`.trim() || "عميل",
+        customerEmail: currentUser?.email || shippingDetails.email || "",
+        items: cart.map(item => ({
+          id: item.id || 0,
+          name: item.name || "",
+          price: item.price || 0,
+          quantity: item.quantity || 0,
+          image: item.images?.[0]?.src || item.image || "",
+          selectedAttributes: item.selectedAttributes ? JSON.parse(JSON.stringify(item.selectedAttributes)) : null
+        })),
+        total: parseFloat(wcOrder.total || "0") || 0,
         status: 'pending',
-        wcOrderId: wcOrder.id,
-        billing: wcOrderData.billing,
+        wcOrderId: wcOrder.id || 0,
+        billing: JSON.parse(JSON.stringify(wcOrderData.billing)),
         payment_method: paymentMethod,
         payment_method_title: wcOrderData.payment_method_title,
         isCompany: extraData?.isCompany || false,
-        companyInfo: extraData?.companyInfo || null,
-        pickupShowroom: extraData?.pickupShowroom || null,
-        bankTransferInfo: extraData?.bankTransferInfo || null,
+        companyInfo: extraData?.companyInfo ? JSON.parse(JSON.stringify(extraData.companyInfo)) : null,
+        pickupShowroom: extraData?.pickupShowroom ? JSON.parse(JSON.stringify(extraData.pickupShowroom)) : null,
+        bankTransferInfo: extraData?.bankTransferInfo ? JSON.parse(JSON.stringify(extraData.bankTransferInfo)) : null,
         createdAt: new Date().toISOString()
       });
 
       if (paymentMethod === "telr" || paymentMethod === "applepay") {
-        console.log(`Initiating Telr payment for WC Order #${wcOrder.id}...`);
-        // Initiate Telr Payment
-        const telrResponse = await fetch("/api/payment/telr", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            orderId: wcOrder.id,
-            amount: totalAmount.toFixed(2),
-            currency: "SAR",
-            customer: shippingDetails,
-            returnUrl: `${window.location.origin}/?telr_ref={ref}&order_id=${wcOrder.id}`,
-            cancelUrl: `${window.location.origin}/?telr_status=cancel`,
-            payMethod: paymentMethod === "applepay" ? "applepay" : undefined
-          })
-        });
-
-        const telrData = await telrResponse.json();
-        if (telrResponse.ok && telrData.url) {
-          console.log("Telr payment URL received, redirecting...", telrData.url);
-          window.location.href = telrData.url;
-          return;
-        } else {
-          const errorMsg = telrData.error || "فشل في بدء عملية الدفع عبر تلر. يرجى التأكد من إعدادات المتجر.";
-          console.error("Telr Error:", telrData);
-          throw new Error(errorMsg);
-        }
+        // التكامل المثالي: التوجيه إلى صفحة الدفع الرسمية في ووكومرس
+        // نستخدم payment_url المرجّع من API ووكومرس مباشرة
+        const paymentUrl = wcOrder.payment_url || `https://api.droubalsalamah.com/checkout/order-pay/${wcOrder.id}/?pay_for_order=true&key=${wcOrder.order_key}`;
+        console.log("Redirecting to official WooCommerce payment page:", paymentUrl);
+        window.location.href = paymentUrl;
+        return;
       }
 
       setCart([]);
