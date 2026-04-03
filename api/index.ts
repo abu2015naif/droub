@@ -360,13 +360,16 @@ async function startServer() {
       params.append("bill_email", customer.email);
       params.append("bill_phone", customer.phone || "0000000000");
 
-      console.log("Initiating Telr payment with Form Data (ivp_ keys)...");
+      console.log(`📡 Initiating Telr payment for Order #${orderId}, Amount: ${amount} ${currency}`);
+      console.log(`   Store ID: ${storeId}, Test Mode: ${testMode}`);
 
       const response = await axios.post("https://secure.telr.com/gateway/order.json", params, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
         }
       });
+      
+      console.log("📡 Telr API Raw Response:", JSON.stringify(response.data, null, 2));
       
       if (response.data.order && response.data.order.url) {
         console.log(`✅ Telr payment initiated successfully for Order #${orderId}. Ref: ${response.data.order.ref}`);

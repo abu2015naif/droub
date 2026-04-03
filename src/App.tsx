@@ -657,12 +657,12 @@ export default function App() {
             })
           });
 
+          const telrData = await telrResponse.json();
+          
           if (!telrResponse.ok) {
-            const errorData = await telrResponse.json();
-            throw new Error(errorData.error || "Failed to initiate Telr payment");
+            throw new Error(telrData.error || "Failed to initiate Telr payment");
           }
 
-          const telrData = await telrResponse.json();
           if (telrData.url) {
             console.log("Redirecting directly to Telr gateway:", telrData.url);
             window.location.href = telrData.url;
@@ -671,10 +671,9 @@ export default function App() {
             throw new Error("No payment URL received from Telr");
           }
         } catch (telrError: any) {
-          console.error("Telr direct initiation failed, falling back to WooCommerce page:", telrError);
-          // Fallback to WooCommerce page if direct initiation fails
-          const paymentUrl = wcOrder.payment_url || `https://api.droubalsalamah.com/checkout/order-pay/${wcOrder.id}/?pay_for_order=true&key=${wcOrder.order_key}`;
-          window.location.href = paymentUrl;
+          console.error("Telr direct initiation failed:", telrError);
+          setError(`فشل الاتصال ببوابة Telr: ${telrError.message}`);
+          alert(`خطأ في بوابة الدفع: ${telrError.message}`);
           return;
         }
       }
