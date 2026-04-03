@@ -319,29 +319,28 @@ async function startServer() {
       const { orderId, amount, currency, customer, returnUrl, cancelUrl, payMethod } = req.body;
       
       // Use credentials from user screenshot as defaults if env vars are missing
-      const storeId = process.env.TELR_STORE_ID || "30349";
-      const apiKey = process.env.TELR_API_KEY || "Z7TjQ~XFDJ@d6N5R";
-      const testMode = process.env.TELR_TEST_MODE === "1" ? 1 : 0; // Default to production mode (0) unless explicitly set to 1
+      const storeId = (process.env.TELR_STORE_ID || "30349").trim();
+      const apiKey = (process.env.TELR_API_KEY || "Z7TjQ~XFDJ@d6N5R").trim();
+      const testMode = process.env.TELR_TEST_MODE === "1" ? "1" : "0";
 
       if (!storeId || !apiKey) {
         return res.status(500).json({ error: "Telr configuration missing" });
       }
 
-      const payload = {
+      // Manually construct the body to have full control over encoding
+      // Telr sometimes has issues with standard URL encoding of special characters in the authkey
+      const data: Record<string, string> = {
         ivp_method: "create",
-        ivp_store: storeId.trim(),
-        ivp_authkey: apiKey.trim(),
+        ivp_store: storeId,
+        ivp_authkey: apiKey,
         ivp_cart: orderId.toString(),
-        ivp_test: testMode.toString(),
+        ivp_test: testMode,
         ivp_amount: amount.toString(),
         ivp_currency: currency || "SAR",
-        ivp_desc: `Order #${orderId} - ${customer.firstName} ${customer.lastName}`,
+        ivp_desc: `Order #${orderId}`,
         return_auth: returnUrl,
         return_can: cancelUrl,
         return_decl: cancelUrl,
-        ivp_return_auth: returnUrl,
-        ivp_return_can: cancelUrl,
-        ivp_return_decl: cancelUrl,
         ivp_trantype: "sale",
         ivp_lang: "ar",
         bill_fname: customer.firstName || "Customer",
@@ -350,16 +349,32 @@ async function startServer() {
         bill_city: customer.city || "Riyadh",
         bill_country: "SA",
         bill_email: customer.email,
-        bill_phone: customer.phone || "0000000000",
-        ...(payMethod === "applepay" ? { ivp_paymethod: "applepay" } : {})
+        bill_phone: customer.phone || "0000000000"
       };
+
+      if (payMethod === "applepay") {
+        data.ivp_paymethod = "applepay";
+      }
+
+      // Construct the form-urlencoded string manually
+      const body = Object.entries(data)
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join('&');
 
       console.log(`📡 Initiating Telr payment for Order #${orderId}, Amount: ${amount} ${currency}`);
       console.log(`   Store ID: ${storeId}, Test Mode: ${testMode}`);
+      
+      // Try to get the server's public IP to help the user with whitelisting
+      try {
+        const ipRes = await axios.get('https://api.ipify.org?format=json');
+        console.log(`🌍 Server Public IP: ${ipRes.data.ip} (Please ensure this IP is whitelisted in Telr Merchant Admin)`);
+      } catch (e) {
+        console.log("🌍 Could not determine server public IP");
+      }
 
-      const response = await axios.post("https://secure.telr.com/gateway/order.json", payload, {
+      const response = await axios.post("https://secure.telr.com/gateway/order.json", body, {
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
           'Accept': 'application/json'
         }
       });
@@ -390,17 +405,15 @@ async function startServer() {
         return res.status(500).json({ error: "Telr configuration missing" });
       }
 
-      const payload = {
-        ivp_method: "check",
-        ivp_store: storeId.trim(),
-        ivp_authkey: apiKey.trim(),
-        order_ref: ref
-      };
+      const params = new URLSearchParams();
+      params.append("ivp_method", "check");
+      params.append("ivp_store", storeId.trim());
+      params.append("ivp_authkey", apiKey.trim());
+      params.append("order_ref", ref);
 
-      const response = await axios.post("https://secure.telr.com/gateway/order.json", payload, {
+      const response = await axios.post("https://secure.telr.com/gateway/order.json", params, {
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Content-Type': 'application/x-www-form-urlencoded'
         }
       });
       res.json(response.data);
