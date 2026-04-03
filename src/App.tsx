@@ -672,7 +672,6 @@ export default function App() {
           }
         } catch (telrError: any) {
           console.error("Telr direct initiation failed:", telrError);
-          setError(`فشل الاتصال ببوابة Telr: ${telrError.message}`);
           alert(`خطأ في بوابة الدفع: ${telrError.message}`);
           return;
         }

@@ -327,45 +327,40 @@ async function startServer() {
         return res.status(500).json({ error: "Telr configuration missing" });
       }
 
-      const params = new URLSearchParams();
-      params.append("ivp_method", "create");
-      params.append("ivp_store", storeId.trim());
-      params.append("ivp_authkey", apiKey.trim());
-      params.append("ivp_cart", orderId.toString());
-      params.append("ivp_test", testMode.toString());
-      params.append("ivp_amount", amount.toString());
-      params.append("ivp_currency", currency || "SAR");
-      params.append("ivp_desc", `Order #${orderId} - ${customer.firstName} ${customer.lastName}`);
-      params.append("return_auth", returnUrl);
-      params.append("return_can", cancelUrl);
-      params.append("return_decl", cancelUrl);
-      
-      // Add ivp_ prefixed return URLs as well for compatibility
-      params.append("ivp_return_auth", returnUrl);
-      params.append("ivp_return_can", cancelUrl);
-      params.append("ivp_return_decl", cancelUrl);
-      
-      params.append("ivp_trantype", "sale");
-      params.append("ivp_lang", "ar"); // Force Arabic language as per user request/screenshot
-      
-      if (payMethod === "applepay") {
-        params.append("ivp_paymethod", "applepay");
-      }
-
-      params.append("bill_fname", customer.firstName || "Customer");
-      params.append("bill_sname", customer.lastName || "Name");
-      params.append("bill_addr1", customer.address || "N/A");
-      params.append("bill_city", customer.city || "Riyadh");
-      params.append("bill_country", "SA");
-      params.append("bill_email", customer.email);
-      params.append("bill_phone", customer.phone || "0000000000");
+      const payload = {
+        ivp_method: "create",
+        ivp_store: storeId.trim(),
+        ivp_authkey: apiKey.trim(),
+        ivp_cart: orderId.toString(),
+        ivp_test: testMode.toString(),
+        ivp_amount: amount.toString(),
+        ivp_currency: currency || "SAR",
+        ivp_desc: `Order #${orderId} - ${customer.firstName} ${customer.lastName}`,
+        return_auth: returnUrl,
+        return_can: cancelUrl,
+        return_decl: cancelUrl,
+        ivp_return_auth: returnUrl,
+        ivp_return_can: cancelUrl,
+        ivp_return_decl: cancelUrl,
+        ivp_trantype: "sale",
+        ivp_lang: "ar",
+        bill_fname: customer.firstName || "Customer",
+        bill_sname: customer.lastName || "Name",
+        bill_addr1: customer.address || "N/A",
+        bill_city: customer.city || "Riyadh",
+        bill_country: "SA",
+        bill_email: customer.email,
+        bill_phone: customer.phone || "0000000000",
+        ...(payMethod === "applepay" ? { ivp_paymethod: "applepay" } : {})
+      };
 
       console.log(`📡 Initiating Telr payment for Order #${orderId}, Amount: ${amount} ${currency}`);
       console.log(`   Store ID: ${storeId}, Test Mode: ${testMode}`);
 
-      const response = await axios.post("https://secure.telr.com/gateway/order.json", params, {
+      const response = await axios.post("https://secure.telr.com/gateway/order.json", payload, {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         }
       });
       
@@ -395,15 +390,17 @@ async function startServer() {
         return res.status(500).json({ error: "Telr configuration missing" });
       }
 
-      const params = new URLSearchParams();
-      params.append("ivp_method", "check");
-      params.append("ivp_store", storeId.trim());
-      params.append("ivp_authkey", apiKey.trim());
-      params.append("order_ref", ref);
+      const payload = {
+        ivp_method: "check",
+        ivp_store: storeId.trim(),
+        ivp_authkey: apiKey.trim(),
+        order_ref: ref
+      };
 
-      const response = await axios.post("https://secure.telr.com/gateway/order.json", params, {
+      const response = await axios.post("https://secure.telr.com/gateway/order.json", payload, {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         }
       });
       res.json(response.data);
