@@ -2407,16 +2407,18 @@ function CheckoutPage({
                     {isGatewayEnabled('telr') && (
                       <div 
                         onClick={() => setPaymentMethod("telr")}
-                        className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "telr" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
+                        className={`flex items-center gap-4 p-5 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "telr" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
                       >
                         <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "telr" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
                         <div className="flex-1">
-                          <p className="font-bold">بطاقة مدى / فيزا / ماستركارد</p>
-                          <p className="text-xs text-gray-500">دفع آمن عبر بوابة Telr</p>
-                        </div>
-                        <div className="flex gap-2">
-                          <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" className="h-4" alt="Visa" referrerPolicy="no-referrer" />
-                          <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" className="h-4" alt="Mastercard" referrerPolicy="no-referrer" />
+                          <p className="font-bold text-lg">الدفع باستخدام البطاقات الائتمانية</p>
+                          <p className="text-sm text-gray-500">دفع باستخدام بطاقات فيزا / ماستر كارد / مدى</p>
+                          <div className="flex gap-3 mt-3">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/Apple_Pay_logo.svg" className="h-6 opacity-80" alt="Apple Pay" referrerPolicy="no-referrer" />
+                            <img src="https://droubalsalamah.com/wp-content/plugins/telr-payment-gateway/assets/images/mada.png" className="h-6" alt="Mada" onError={(e) => e.currentTarget.src = "https://upload.wikimedia.org/wikipedia/commons/8/84/Mada_Logo.svg"} referrerPolicy="no-referrer" />
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" className="h-6" alt="Mastercard" referrerPolicy="no-referrer" />
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" className="h-6" alt="Visa" referrerPolicy="no-referrer" />
+                          </div>
                         </div>
                       </div>
                     )}
@@ -2424,15 +2426,15 @@ function CheckoutPage({
                     {isApplePaySupported && isGatewayEnabled('telr') && (
                       <div 
                         onClick={() => setPaymentMethod("applepay")}
-                        className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "applepay" ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
+                        className={`flex items-center gap-4 p-5 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "applepay" ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
                       >
                         <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "applepay" ? "border-black bg-white" : "border-gray-200 bg-white"}`} />
                         <div className="flex-1">
-                          <p className="font-bold">Apple Pay</p>
-                          <p className="text-xs text-gray-500">دفع سريع وآمن عبر Apple Pay</p>
+                          <p className="font-bold text-lg">Apple Pay</p>
+                          <p className="text-sm text-gray-500">دفع سريع وآمن عبر Apple Pay</p>
                         </div>
                         <div className="flex gap-2">
-                          <img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/Apple_Pay_logo.svg" className="h-8" alt="Apple Pay" referrerPolicy="no-referrer" />
+                          <img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/Apple_Pay_logo.svg" className="h-10" alt="Apple Pay" referrerPolicy="no-referrer" />
                         </div>
                       </div>
                     )}
@@ -2568,7 +2570,7 @@ function CheckoutPage({
               className="w-full bg-red-600 text-white py-5 rounded-2xl font-bold text-xl shadow-xl shadow-red-100 hover:bg-red-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
             >
               {loading ? <Clock className="animate-spin" /> : <ShieldCheck />}
-              تأكيد الطلب
+              {(paymentMethod === "telr" || paymentMethod === "applepay") ? "المتابعة للدفع" : "تأكيد الطلب"}
             </button>
           </form>
         </div>

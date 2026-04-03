@@ -318,9 +318,10 @@ async function startServer() {
     try {
       const { orderId, amount, currency, customer, returnUrl, cancelUrl, payMethod } = req.body;
       
-      const storeId = process.env.TELR_STORE_ID;
-      const apiKey = process.env.TELR_API_KEY;
-      const testMode = process.env.TELR_TEST_MODE === "1" ? 1 : 0;
+      // Use credentials from user screenshot as defaults if env vars are missing
+      const storeId = process.env.TELR_STORE_ID || "30349";
+      const apiKey = process.env.TELR_API_KEY || "Z7TjQ~XFDJ@d6N5R";
+      const testMode = process.env.TELR_TEST_MODE === "1" ? 1 : 0; // Default to production mode (0) unless explicitly set to 1
 
       if (!storeId || !apiKey) {
         return res.status(500).json({ error: "Telr configuration missing" });
@@ -334,7 +335,7 @@ async function startServer() {
       params.append("ivp_test", testMode.toString());
       params.append("ivp_amount", amount.toString());
       params.append("ivp_currency", currency || "SAR");
-      params.append("ivp_desc", `Order #${orderId}`);
+      params.append("ivp_desc", `Order #${orderId} - ${customer.firstName} ${customer.lastName}`);
       params.append("return_auth", returnUrl);
       params.append("return_can", cancelUrl);
       params.append("return_decl", cancelUrl);
@@ -345,9 +346,10 @@ async function startServer() {
       params.append("ivp_return_decl", cancelUrl);
       
       params.append("ivp_trantype", "sale");
+      params.append("ivp_lang", "ar"); // Force Arabic language as per user request/screenshot
       
-      if (payMethod) {
-        params.append("ivp_paymethod", payMethod);
+      if (payMethod === "applepay") {
+        params.append("ivp_paymethod", "applepay");
       }
 
       params.append("bill_fname", customer.firstName || "Customer");
@@ -383,8 +385,8 @@ async function startServer() {
   app.get("/api/payment/telr/check/:ref", async (req, res) => {
     try {
       const { ref } = req.params;
-      const storeId = process.env.TELR_STORE_ID;
-      const apiKey = process.env.TELR_API_KEY;
+      const storeId = process.env.TELR_STORE_ID || "30349";
+      const apiKey = process.env.TELR_API_KEY || "Z7TjQ~XFDJ@d6N5R";
 
       if (!storeId || !apiKey) {
         return res.status(500).json({ error: "Telr configuration missing" });
