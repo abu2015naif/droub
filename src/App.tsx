@@ -668,7 +668,7 @@ export default function App() {
               },
               returnUrl: `${window.location.origin}?payment=success&order_id=${wcOrder.id}`,
               cancelUrl: `${window.location.origin}?payment=cancel&order_id=${wcOrder.id}`,
-              payMethod: paymentMethod.toLowerCase().includes("applepay") ? "applepay" : "creditcard"
+              payMethod: "creditcard"
             })
           });
 

@@ -378,10 +378,6 @@ async function startServer() {
         bill_phone: customer.phone || "0000000000"
       };
 
-      if (payMethod === "applepay") {
-        data.ivp_paymethod = "applepay";
-      }
-
       // Construct the form-urlencoded string manually
       const body = Object.entries(data)
         .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
