@@ -639,8 +639,16 @@ export default function App() {
 
       if (paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay")) {
         try {
-          const paymentAmount = wcOrder.total || totalAmount.toString();
-          console.log("🚀 Initiating Telr payment:", { orderId: wcOrder.id, amount: paymentAmount });
+          // Fix: If WooCommerce returns '0' as total, use our locally calculated totalAmount
+          const wcTotal = wcOrder.total;
+          const paymentAmount = (wcTotal && parseFloat(wcTotal) > 0) ? wcTotal : totalAmount.toFixed(2);
+          
+          console.log("🚀 Initiating Telr payment:", { 
+            orderId: wcOrder.id, 
+            amount: paymentAmount,
+            wcTotal: wcTotal,
+            localTotal: totalAmount.toFixed(2)
+          });
           
           const telrResponse = await fetch("/api/payment/telr", {
             method: "POST",

@@ -336,11 +336,16 @@ async function startServer() {
       }
 
       const numAmount = parseFloat(amount.toString());
-      console.log(`📡 Parsed amount: ${numAmount} (Type: ${typeof amount}, Value: ${amount})`);
+      console.log(`📡 Received Telr payment request for Order #${orderId}`);
+      console.log(`   Amount: ${numAmount} (Original: "${amount}", Type: ${typeof amount})`);
       
       if (isNaN(numAmount) || numAmount <= 0) {
         console.error(`❌ Invalid amount calculation: ${numAmount} (Original: ${amount})`);
-        return res.status(400).json({ error: "Invalid amount provided" });
+        return res.status(400).json({ 
+          error: "Invalid amount provided", 
+          receivedAmount: amount,
+          parsedAmount: numAmount 
+        });
       }
       
       const formattedAmount = numAmount.toFixed(2);
