@@ -2100,32 +2100,6 @@ function CheckoutPage({
     if (isGatewayEnabled('bacs')) return "bank_transfer";
     return "cod";
   });
-  const [isApplePaySupported, setIsApplePaySupported] = useState(false);
-
-  useEffect(() => {
-    const checkSupport = () => {
-      if (typeof window !== 'undefined') {
-        const userAgent = window.navigator.userAgent || window.navigator.vendor || (window as any).opera;
-        const platform = window.navigator.platform || '';
-        
-        // Very permissive check for iOS/Apple devices
-        const isIOS = /iPhone|iPad|iPod/i.test(userAgent) || /iPhone|iPad|iPod/i.test(platform);
-        const isSafari = /Safari/i.test(userAgent) && !/Chrome/i.test(userAgent);
-        const isIPadPro = (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        const hasApplePay = !!(window as any).ApplePaySession;
-        
-        console.log("📱 Apple Pay Detection:", { isIOS, isIPadPro, hasApplePay, isSafari });
-        
-        if (isIOS || isIPadPro || hasApplePay) {
-          setIsApplePaySupported(true);
-        }
-      }
-    };
-    
-    checkSupport();
-    const timer = setTimeout(checkSupport, 1000);
-    return () => clearTimeout(timer);
-  }, []);
   useEffect(() => {
     if (paymentGateways.length > 0) {
       const currentGateway = paymentGateways.find(g => g.id === paymentMethod || (paymentMethod === 'bank_transfer' && g.id === 'bacs'));
@@ -2502,7 +2476,7 @@ function CheckoutPage({
                       </div>
                     )}
 
-                    {(isApplePaySupported || (typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/i.test(navigator.userAgent) || /Apple/i.test(navigator.vendor)))) && (isGatewayEnabled('applepay') || isGatewayEnabled('telr')) && (
+                    {paymentGateways.length > 0 && (
                       <div 
                         onClick={() => setPaymentMethod(isGatewayEnabled('applepay') ? getActualGatewayId('applepay') : 'telr_applepay')}
                         className={`flex items-center gap-4 p-5 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod.toLowerCase().includes("applepay") ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
