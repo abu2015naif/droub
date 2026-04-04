@@ -365,18 +365,13 @@ async function startServer() {
         .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
         .join('&');
 
-      console.log(`📡 Initiating Telr payment for Order #${orderId}, Amount: ${formattedAmount} ${formattedCurrency}`);
-      console.log(`   Store ID: ${storeId}, Test Mode: ${testMode}`);
+      // Use the WordPress site as a proxy to bypass Telr IP whitelisting issues on Vercel
+      const proxyUrl = "https://api.droubalsalamah.com/telr-proxy.php";
       
-      // Try to get the server's public IP to help the user with whitelisting
-      try {
-        const ipRes = await axios.get('https://api.ipify.org?format=json');
-        console.log(`🌍 Server Public IP: ${ipRes.data.ip} (Please ensure this IP is whitelisted in Telr Merchant Admin)`);
-      } catch (e) {
-        console.log("🌍 Could not determine server public IP");
-      }
+      console.log(`📡 Initiating Telr payment via Proxy for Order #${orderId}, Amount: ${formattedAmount} ${formattedCurrency}`);
+      console.log(`   Proxy URL: ${proxyUrl}`);
 
-      const response = await axios.post("https://secure.telr.com/gateway/order.json", body, {
+      const response = await axios.post(proxyUrl, body, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Accept': 'application/json'
