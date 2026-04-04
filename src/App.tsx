@@ -558,6 +558,7 @@ export default function App() {
 
       const shippingCost = parseFloat(selectedShipping?.settings?.cost?.value || "0");
       const totalAmount = cartTotal + shippingCost;
+      console.log("💰 Order Total Calculation:", { cartTotal, shippingCost, totalAmount });
 
       // 1. Create order in WooCommerce via our backend
       const wcOrderData = {
@@ -590,7 +591,7 @@ export default function App() {
           {
             method_id: selectedShipping.method_id,
             method_title: selectedShipping.method_title,
-            total: shippingCost.toString()
+            total: shippingCost.toFixed(2)
           }
         ] : []
       };
@@ -602,10 +603,13 @@ export default function App() {
       });
 
       if (!wcResponse.ok) {
+        const errorData = await wcResponse.json();
+        console.error("❌ WooCommerce Order Creation Failed:", errorData);
         throw new Error("Failed to sync with WooCommerce");
       }
 
       const wcOrder = await wcResponse.json();
+      console.log("✅ WooCommerce Order Created:", wcOrder);
 
       // 2. Also save to Firestore for local tracking
       await addDoc(collection(db, "orders"), {
@@ -620,7 +624,7 @@ export default function App() {
           image: item.images?.[0]?.src || item.image || "",
           selectedAttributes: item.selectedAttributes ? JSON.parse(JSON.stringify(item.selectedAttributes)) : null
         })),
-        total: parseFloat(wcOrder.total || "0") || 0,
+        total: parseFloat(wcOrder.total || totalAmount.toString()) || totalAmount,
         status: 'pending',
         wcOrderId: wcOrder.id || 0,
         billing: JSON.parse(JSON.stringify(wcOrderData.billing)),
@@ -635,13 +639,15 @@ export default function App() {
 
       if (paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay")) {
         try {
-          console.log("Initiating direct Telr payment for order:", wcOrder.id);
+          const paymentAmount = wcOrder.total || totalAmount.toString();
+          console.log("🚀 Initiating Telr payment:", { orderId: wcOrder.id, amount: paymentAmount });
+          
           const telrResponse = await fetch("/api/payment/telr", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               orderId: wcOrder.id,
-              amount: wcOrder.total,
+              amount: paymentAmount,
               currency: wcOrder.currency || "SAR",
               customer: {
                 firstName: shippingDetails.firstName,

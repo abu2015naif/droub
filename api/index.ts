@@ -318,6 +318,8 @@ async function startServer() {
     try {
       const { orderId, amount, currency, customer, returnUrl, cancelUrl, payMethod } = req.body;
       
+      console.log("📡 Received Telr payment request body:", JSON.stringify(req.body, null, 2));
+      
       // Use credentials from user screenshot as defaults if env vars are missing
       const storeId = (process.env.TELR_STORE_ID || "30349").trim();
       const apiKey = (process.env.TELR_API_KEY || "Z7TjQ~XFDJ@d6N5R").trim();
@@ -327,9 +329,17 @@ async function startServer() {
         return res.status(500).json({ error: "Telr configuration missing" });
       }
 
-      // Validate and ensure amount is formatted to 2 decimal places
+      // Validate amount
+      if (amount === undefined || amount === null || amount === "") {
+        console.error("❌ Amount is missing or empty in request body");
+        return res.status(400).json({ error: "Amount is required" });
+      }
+
       const numAmount = parseFloat(amount.toString());
+      console.log(`📡 Parsed amount: ${numAmount} (Type: ${typeof amount}, Value: ${amount})`);
+      
       if (isNaN(numAmount) || numAmount <= 0) {
+        console.error(`❌ Invalid amount calculation: ${numAmount} (Original: ${amount})`);
         return res.status(400).json({ error: "Invalid amount provided" });
       }
       
