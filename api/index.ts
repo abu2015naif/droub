@@ -327,12 +327,16 @@ async function startServer() {
         return res.status(500).json({ error: "Telr configuration missing" });
       }
 
-      // Ensure amount is formatted to 2 decimal places as required by many gateways
-      const formattedAmount = parseFloat(amount.toString()).toFixed(2);
+      // Validate and ensure amount is formatted to 2 decimal places
+      const numAmount = parseFloat(amount.toString());
+      if (isNaN(numAmount) || numAmount <= 0) {
+        return res.status(400).json({ error: "Invalid amount provided" });
+      }
+      
+      const formattedAmount = numAmount.toFixed(2);
       const formattedCurrency = (currency || "SAR").toUpperCase();
 
       // Manually construct the body to have full control over encoding
-      // Telr sometimes has issues with standard URL encoding of special characters in the authkey
       const data: Record<string, string> = {
         ivp_method: "create",
         ivp_store: storeId,
@@ -342,11 +346,14 @@ async function startServer() {
         ivp_amount: formattedAmount,
         ivp_currency: formattedCurrency,
         ivp_desc: `Order #${orderId}`,
+        ivp_trantype: "sale",
+        ivp_lang: "ar",
         return_auth: returnUrl,
         return_can: cancelUrl,
         return_decl: cancelUrl,
-        ivp_trantype: "sale",
-        ivp_lang: "ar",
+        ivp_return_auth: returnUrl,
+        ivp_return_can: cancelUrl,
+        ivp_return_decl: cancelUrl,
         bill_fname: customer.firstName || "Customer",
         bill_sname: customer.lastName || "Name",
         bill_addr1: customer.address || "N/A",
