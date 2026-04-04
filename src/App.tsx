@@ -565,6 +565,7 @@ export default function App() {
         payment_method: paymentMethod,
         payment_method_title: paymentMethod === "cod" ? "الدفع عند الاستلام" : 
                              paymentMethod === "bank_transfer" ? "حوالة بنكية" :
+                             paymentMethod.toLowerCase().includes("applepay") ? "Apple Pay" :
                              "بطاقة مدى / فيزا / ماستركارد",
         set_paid: false,
         customer_note: extraData?.isCompany ? `طلب لشركة: ${extraData.companyInfo?.name || ""} - ضريبي: ${extraData.companyInfo?.taxNumber || ""} - سجل: ${extraData.companyInfo?.commercialRegister || ""}` : "",
@@ -2102,8 +2103,12 @@ function CheckoutPage({
   const [isApplePaySupported, setIsApplePaySupported] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).ApplePaySession) {
-      setIsApplePaySupported(true);
+    if (typeof window !== 'undefined') {
+      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      const hasApplePay = (window as any).ApplePaySession;
+      if (isIOS || hasApplePay) {
+        setIsApplePaySupported(true);
+      }
     }
   }, []);
   useEffect(() => {
@@ -2482,9 +2487,9 @@ function CheckoutPage({
                       </div>
                     )}
 
-                    {isApplePaySupported && isGatewayEnabled('applepay') && (
+                    {isApplePaySupported && (isGatewayEnabled('applepay') || isGatewayEnabled('telr')) && (
                       <div 
-                        onClick={() => setPaymentMethod(getActualGatewayId('applepay'))}
+                        onClick={() => setPaymentMethod(isGatewayEnabled('applepay') ? getActualGatewayId('applepay') : 'telr_applepay')}
                         className={`flex items-center gap-4 p-5 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod.toLowerCase().includes("applepay") ? "border-black bg-gray-50" : "border-gray-100 hover:border-gray-200"}`}
                       >
                         <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod.toLowerCase().includes("applepay") ? "border-black bg-white" : "border-gray-200 bg-white"}`} />
