@@ -692,8 +692,8 @@ export default function App() {
           }
         } catch (tamaraError: any) {
           console.error("❌ Tamara Error:", tamaraError);
-          setOrderError("عذراً، فشل بدء عملية الدفع عبر تمارا. يرجى المحاولة مرة أخرى أو اختيار وسيلة دفع أخرى.");
-          setLoading(false);
+          alert("عذراً، فشل بدء عملية الدفع عبر تمارا. يرجى المحاولة مرة أخرى أو اختيار وسيلة دفع أخرى.");
+          setCheckoutLoading(false);
           return;
         }
       }
