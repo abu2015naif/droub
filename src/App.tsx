@@ -2962,18 +2962,39 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
 
   // Tamara Widget Logic
   useEffect(() => {
-    if (isOpen && product && !window.tamara) {
-      const script = document.createElement('script');
-      script.src = "https://cdn.tamara.co/widget/v2/tamara-widget.js";
-      script.async = true;
-      script.onload = () => {
-        if (window.tamara) {
-          window.tamara.widget.render();
+    if (isOpen && product) {
+      let retryCount = 0;
+      const maxRetries = 10;
+      
+      const refreshTamara = () => {
+        // @ts-ignore
+        if (window.TamaraWidgetV2 && typeof window.TamaraWidgetV2.refresh === 'function') {
+          // @ts-ignore
+          window.TamaraWidgetV2.refresh();
+          return true;
         }
+        return false;
       };
-      document.body.appendChild(script);
-    } else if (isOpen && window.tamara) {
-      window.tamara.widget.render();
+
+      const interval = setInterval(() => {
+        if (refreshTamara() || retryCount >= maxRetries) {
+          clearInterval(interval);
+        }
+        retryCount++;
+      }, 500);
+
+      // Also try dynamic loading if not present
+      if (!document.querySelector('script[src*="tamara-widget.js"]')) {
+        const script = document.createElement('script');
+        script.src = "https://cdn.tamara.co/widget/v2/tamara-widget.js";
+        script.defer = true;
+        script.onload = () => {
+          setTimeout(refreshTamara, 500);
+        };
+        document.head.appendChild(script);
+      }
+
+      return () => clearInterval(interval);
     }
   }, [isOpen, product]);
 
@@ -3057,17 +3078,23 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
               </div>
 
               {/* Tamara Promotional Widget */}
-              <div className="mb-8 p-3 bg-gray-50 rounded-2xl border border-gray-100">
+              <div className="mb-8 p-5 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                 <div 
-                  className="tamara-product-widget" 
+                  key={`tamara-widget-${product.id}-${product.price}`}
+                  className="tamara-product-widget min-h-[100px]" 
                   data-lang="ar" 
                   data-price={product.price} 
                   data-currency="SAR" 
                   data-payment-type="PAY_BY_INSTALMENTS"
+                  data-number-of-installments="4"
                   data-disable-installment="false"
                   data-disable-pay-later="true"
                   data-public-key="5efe5280-6e1a-4b47-a18f-f245f4ff684f"
+                  data-installment-minimum-amount="1"
                 ></div>
+                <div className="mt-2 text-[10px] text-gray-400 text-center font-medium">
+                  متوافقة مع الشريعة الإسلامية
+                </div>
               </div>
 
               {/* Attributes Selection */}
