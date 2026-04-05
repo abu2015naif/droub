@@ -3078,12 +3078,12 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
               </div>
 
               {/* Tamara Promotional Widget */}
-              <div className="mb-8 p-5 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="mb-8 p-5 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[120px] flex items-center justify-center">
                 <div 
-                  key={`tamara-widget-${product.id}-${product.price}`}
-                  className="tamara-product-widget min-h-[100px]" 
+                  key={`tamara-widget-${product.id}-${product.price}-${isOpen}`}
+                  className="tamara-product-widget w-full" 
                   data-lang="ar" 
-                  data-price={product.price} 
+                  data-price={parseFloat(product.price.toString()).toFixed(2)} 
                   data-currency="SAR" 
                   data-payment-type="PAY_BY_INSTALMENTS"
                   data-number-of-installments="4"
@@ -3091,10 +3091,11 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                   data-disable-pay-later="true"
                   data-public-key="5efe5280-6e1a-4b47-a18f-f245f4ff684f"
                   data-installment-minimum-amount="1"
+                  data-country-code="SA"
                 ></div>
-                <div className="mt-2 text-[10px] text-gray-400 text-center font-medium">
-                  متوافقة مع الشريعة الإسلامية
-                </div>
+              </div>
+              <div className="mt-[-2rem] mb-8 text-[10px] text-gray-400 text-center font-medium">
+                متوافقة مع الشريعة الإسلامية
               </div>
 
               {/* Attributes Selection */}
