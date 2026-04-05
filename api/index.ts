@@ -456,6 +456,19 @@ async function startServer() {
 
       console.log(`📡 Initiating Tamara checkout for Order #${orderId}, Amount: ${amount} ${currency}`);
 
+      // Format phone number for Tamara (expects 966...)
+      let phone = customer.phone || "500000000";
+      phone = phone.replace(/\s+/g, ''); // Remove spaces
+      if (phone.startsWith('05')) {
+        phone = '966' + phone.substring(1);
+      } else if (phone.startsWith('5')) {
+        phone = '966' + phone;
+      } else if (phone.startsWith('+966')) {
+        phone = phone.substring(1);
+      } else if (!phone.startsWith('966')) {
+        phone = '966' + phone;
+      }
+
       const tamaraData = {
         order_reference_id: orderId.toString(),
         total_amount: {
@@ -471,6 +484,10 @@ async function startServer() {
           reference_id: item.id?.toString() || "0",
           sku: item.sku || item.id?.toString() || "0",
           quantity: item.quantity || 1,
+          unit_price: {
+            amount: parseFloat(item.price || "0"),
+            currency: (currency || "SAR").toUpperCase()
+          },
           total_amount: {
             amount: parseFloat(item.price || "0") * (item.quantity || 1),
             currency: (currency || "SAR").toUpperCase()
@@ -479,7 +496,7 @@ async function startServer() {
         consumer: {
           first_name: customer.firstName || "Customer",
           last_name: customer.lastName || "Name",
-          phone_number: customer.phone || "0500000000",
+          phone_number: phone,
           email: customer.email || "customer@example.com"
         },
         shipping_address: {
@@ -488,7 +505,7 @@ async function startServer() {
           line1: customer.address || "N/A",
           city: customer.city || "Riyadh",
           country_code: "SA",
-          phone_number: customer.phone || "0500000000"
+          phone_number: phone
         },
         billing_address: {
           first_name: customer.firstName || "Customer",
@@ -496,7 +513,7 @@ async function startServer() {
           line1: customer.address || "N/A",
           city: customer.city || "Riyadh",
           country_code: "SA",
-          phone_number: customer.phone || "0500000000"
+          phone_number: phone
         },
         merchant_url: {
           success: returnUrl,
