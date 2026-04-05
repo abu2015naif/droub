@@ -445,7 +445,7 @@ async function startServer() {
   // Tamara Payment Gateway Integration
   app.post("/api/payment/tamara/checkout", async (req, res) => {
     try {
-      const { orderId, amount, currency, customer, items, returnUrl, cancelUrl } = req.body;
+      const { orderId, amount, currency, customer, items, shippingAmount, returnUrl, cancelUrl } = req.body;
       const apiToken = process.env.TAMARA_API_TOKEN;
       const apiUrl = process.env.TAMARA_API_URL || "https://api.tamara.co";
 
@@ -475,9 +475,22 @@ async function startServer() {
           amount: parseFloat(amount),
           currency: (currency || "SAR").toUpperCase()
         },
+        shipping_amount: {
+          amount: parseFloat(shippingAmount || "0"),
+          currency: (currency || "SAR").toUpperCase()
+        },
+        tax_amount: {
+          amount: 0,
+          currency: (currency || "SAR").toUpperCase()
+        },
+        discount_amount: {
+          amount: 0,
+          currency: (currency || "SAR").toUpperCase()
+        },
         description: `Order #${orderId} from Droub Al Salamah`,
         country_code: "SA",
         payment_type: "PAY_BY_INSTALMENTS",
+        locale: "ar_SA",
         items: items.map((item: any) => ({
           name: item.name || "Product",
           type: "Physical",
@@ -523,6 +536,8 @@ async function startServer() {
         }
       };
 
+      console.log("📡 Tamara Payload:", JSON.stringify(tamaraData, null, 2));
+
       const response = await axios.post(`${apiUrl}/checkout`, tamaraData, {
         headers: {
           'Authorization': `Bearer ${apiToken}`,
@@ -540,8 +555,13 @@ async function startServer() {
         res.status(400).json({ error: "Failed to get checkout URL from Tamara", details: response.data });
       }
     } catch (error: any) {
-      console.error("❌ Tamara API Error:", error.response?.data || error.message);
-      res.status(500).json({ error: "Tamara API Error", details: error.response?.data || error.message });
+      const errorDetail = error.response?.data || error.message;
+      console.error("❌ Tamara API Error:", JSON.stringify(errorDetail, null, 2));
+      res.status(500).json({ 
+        error: "Tamara API Error", 
+        message: error.response?.data?.message || error.message,
+        details: errorDetail 
+      });
     }
   });
 

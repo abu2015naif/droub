@@ -673,6 +673,7 @@ export default function App() {
                 quantity: item.quantity,
                 sku: item.sku || item.id.toString()
               })),
+              shippingAmount: shippingCost.toFixed(2),
               returnUrl: `${window.location.origin}?payment=success&order_id=${wcOrder.id}`,
               cancelUrl: `${window.location.origin}?payment=cancel&order_id=${wcOrder.id}`
             })
@@ -681,7 +682,7 @@ export default function App() {
           if (!tamaraResponse.ok) {
             const errorData = await tamaraResponse.json();
             console.error("❌ Tamara Payment Initiation Failed:", errorData);
-            throw new Error(errorData.error || "Failed to initiate Tamara payment");
+            throw new Error(errorData.message || errorData.error || "Failed to initiate Tamara payment");
           }
 
           const tamaraResult = await tamaraResponse.json();
