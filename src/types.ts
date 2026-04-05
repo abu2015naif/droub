@@ -113,3 +113,9 @@ export interface Order {
   companyInfo?: CompanyInfo;
   isCompany?: boolean;
 }
+
+declare global {
+  interface Window {
+    tamara: any;
+  }
+}

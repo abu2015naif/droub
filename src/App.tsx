@@ -566,7 +566,8 @@ export default function App() {
         payment_method_title: paymentMethod === "cod" ? "الدفع عند الاستلام" : 
                              paymentMethod === "bank_transfer" ? "حوالة بنكية" :
                              paymentMethod.toLowerCase().includes("applepay") ? "Apple Pay" :
-                             "بطاقة مدى / فيزا / ماستركارد",
+                             paymentMethod.toLowerCase().includes("tamara") ? "تمارا (Tamara)" :
+                             "بطاقة مدى / فيزا / ماستر كارد",
         set_paid: false,
         customer_note: extraData?.isCompany ? `طلب لشركة: ${extraData.companyInfo?.name || ""} - ضريبي: ${extraData.companyInfo?.taxNumber || ""} - سجل: ${extraData.companyInfo?.commercialRegister || ""}` : "",
         billing: {
@@ -612,6 +613,14 @@ export default function App() {
       const wcOrder = await wcResponse.json();
       console.log("✅ WooCommerce Order Created:", wcOrder);
 
+      // Handle standard WooCommerce payment redirects (e.g., Tamara, etc.)
+      if (wcOrder.payment_url || wcOrder.checkout_payment_url) {
+        const redirectUrl = wcOrder.payment_url || wcOrder.checkout_payment_url;
+        console.log("🚀 Redirecting to payment gateway:", redirectUrl);
+        window.location.href = redirectUrl;
+        return;
+      }
+
       // 2. Also save to Firestore for local tracking
       await addDoc(collection(db, "orders"), {
         userId: currentUser?.uid || "guest",
@@ -637,6 +646,65 @@ export default function App() {
         bankTransferInfo: extraData?.bankTransferInfo ? JSON.parse(JSON.stringify(extraData.bankTransferInfo)) : null,
         createdAt: new Date().toISOString()
       });
+
+      if (paymentMethod.toLowerCase().includes("tamara")) {
+        try {
+          const wcTotal = wcOrder.total;
+          const paymentAmount = (wcTotal && parseFloat(wcTotal) > 0) ? wcTotal : totalAmount.toFixed(2);
+          
+          console.log("🚀 Initiating Tamara payment:", { 
+            orderId: wcOrder.id, 
+            amount: paymentAmount,
+            wcTotal: wcTotal,
+            localTotal: totalAmount.toFixed(2)
+          });
+          
+          const tamaraResponse = await fetch("/api/payment/tamara/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderId: wcOrder.id,
+              amount: paymentAmount,
+              currency: wcOrder.currency || "SAR",
+              customer: {
+                firstName: shippingDetails.firstName,
+                lastName: shippingDetails.lastName,
+                email: currentUser?.email || shippingDetails.email,
+                phone: shippingDetails.phone,
+                address: shippingDetails.address,
+                city: shippingDetails.city
+              },
+              items: cart.map(item => ({
+                id: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: item.quantity,
+                sku: item.sku || item.id.toString()
+              })),
+              returnUrl: `${window.location.origin}?payment=success&order_id=${wcOrder.id}`,
+              cancelUrl: `${window.location.origin}?payment=cancel&order_id=${wcOrder.id}`
+            })
+          });
+
+          if (!tamaraResponse.ok) {
+            const errorData = await tamaraResponse.json();
+            console.error("❌ Tamara Payment Initiation Failed:", errorData);
+            throw new Error(errorData.error || "Failed to initiate Tamara payment");
+          }
+
+          const tamaraResult = await tamaraResponse.json();
+          if (tamaraResult.url) {
+            console.log("🚀 Redirecting to Tamara checkout:", tamaraResult.url);
+            window.location.href = tamaraResult.url;
+            return;
+          }
+        } catch (tamaraError: any) {
+          console.error("❌ Tamara Error:", tamaraError);
+          setOrderError("عذراً، فشل بدء عملية الدفع عبر تمارا. يرجى المحاولة مرة أخرى أو اختيار وسيلة دفع أخرى.");
+          setLoading(false);
+          return;
+        }
+      }
 
       if (paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay")) {
         try {
@@ -2096,6 +2164,7 @@ function CheckoutPage({
   const [paymentMethod, setPaymentMethod] = useState<string>(() => {
     if (isGatewayEnabled('telr')) return getActualGatewayId('telr');
     if (isGatewayEnabled('applepay')) return getActualGatewayId('applepay');
+    if (isGatewayEnabled('tamara')) return getActualGatewayId('tamara');
     if (isGatewayEnabled('cod')) return "cod";
     if (isGatewayEnabled('bacs')) return "bank_transfer";
     return "cod";
@@ -2595,9 +2664,25 @@ function CheckoutPage({
                       </div>
                     )}
 
+                    {isGatewayEnabled('tamara') && (
+                      <div 
+                        onClick={() => setPaymentMethod(getActualGatewayId('tamara'))}
+                        className={`flex items-center gap-4 p-5 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod.toLowerCase().includes("tamara") ? "border-[#FF7062] bg-[#FFF9F8]" : "border-gray-100 hover:border-gray-200"}`}
+                      >
+                        <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod.toLowerCase().includes("tamara") ? "border-[#FF7062] bg-white" : "border-gray-200 bg-white"}`} />
+                        <div className="flex-1">
+                          <p className="font-bold text-lg">تمارا (Tamara)</p>
+                          <p className="text-sm text-gray-500">قسم فاتورتك على دفعات بدون فوائد</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <img src="https://cdn.tamara.co/assets/svg/tamara-logo-badge-en.svg" className="h-10" alt="Tamara" referrerPolicy="no-referrer" />
+                        </div>
+                      </div>
+                    )}
+
                     {/* Fallback for other enabled gateways */}
                     {paymentGateways
-                      .filter(g => isGatewayEnabled(g.id) && !['telr', 'applepay', 'cod', 'bacs'].includes(g.id))
+                      .filter(g => isGatewayEnabled(g.id) && !['telr', 'applepay', 'cod', 'bacs', 'tamara'].includes(g.id))
                       .map(gateway => (
                         <div 
                           key={gateway.id}
@@ -2623,7 +2708,7 @@ function CheckoutPage({
               className="w-full bg-red-600 text-white py-5 rounded-2xl font-bold text-xl shadow-xl shadow-red-100 hover:bg-red-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
             >
               {loading ? <Clock className="animate-spin" /> : <ShieldCheck />}
-              {(paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay")) ? "المتابعة للدفع" : "تأكيد الطلب"}
+              {(paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay") || paymentMethod.toLowerCase().includes("tamara")) ? "المتابعة للدفع" : "تأكيد الطلب"}
             </button>
           </form>
         </div>
@@ -2873,6 +2958,23 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
     }
   }, [selectedAttributes, product]);
 
+  // Tamara Widget Logic
+  useEffect(() => {
+    if (isOpen && product && !window.tamara) {
+      const script = document.createElement('script');
+      script.src = "https://cdn.tamara.co/widget/v2/tamara-widget.js";
+      script.async = true;
+      script.onload = () => {
+        if (window.tamara) {
+          window.tamara.widget.render();
+        }
+      };
+      document.body.appendChild(script);
+    } else if (isOpen && window.tamara) {
+      window.tamara.widget.render();
+    }
+  }, [isOpen, product]);
+
   if (!product) return null;
 
   return (
@@ -2941,7 +3043,7 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                 {product.name}
               </h2>
               
-              <div className="flex items-center gap-4 mb-8">
+              <div className="flex items-center gap-4 mb-4">
                 <div className="text-4xl font-black text-red-700">
                   {product.price} <span className="text-lg font-bold">ر.س</span>
                 </div>
@@ -2950,6 +3052,20 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                     {product.regular_price} ر.س
                   </div>
                 )}
+              </div>
+
+              {/* Tamara Promotional Widget */}
+              <div className="mb-8 p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                <div 
+                  className="tamara-product-widget" 
+                  data-lang="ar" 
+                  data-price={product.price} 
+                  data-currency="SAR" 
+                  data-payment-type="PAY_BY_INSTALMENTS"
+                  data-disable-installment="false"
+                  data-disable-pay-later="true"
+                  data-public-key="5efe5280-6e1a-4b47-a18f-f245f4ff684f"
+                ></div>
               </div>
 
               {/* Attributes Selection */}

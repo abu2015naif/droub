@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import axios from "axios";
 import https from "https";
 import fs from "fs";
+import cors from "cors";
 
 dotenv.config();
 
@@ -66,6 +67,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  app.use(cors());
   app.use(express.json());
 
   // Middleware to check if WooCommerce is initialized
@@ -440,6 +442,92 @@ async function startServer() {
     }
   });
 
+  // Tamara Payment Gateway Integration
+  app.post("/api/payment/tamara/checkout", async (req, res) => {
+    try {
+      const { orderId, amount, currency, customer, items, returnUrl, cancelUrl } = req.body;
+      const apiToken = process.env.TAMARA_API_TOKEN;
+      const apiUrl = process.env.TAMARA_API_URL || "https://api.tamara.co";
+
+      if (!apiToken) {
+        console.error("❌ Tamara API Token is missing in environment variables.");
+        return res.status(500).json({ error: "Tamara configuration missing (API Token)" });
+      }
+
+      console.log(`📡 Initiating Tamara checkout for Order #${orderId}, Amount: ${amount} ${currency}`);
+
+      const tamaraData = {
+        order_reference_id: orderId.toString(),
+        total_amount: {
+          amount: parseFloat(amount),
+          currency: (currency || "SAR").toUpperCase()
+        },
+        description: `Order #${orderId} from Droub Al Salamah`,
+        country_code: "SA",
+        payment_type: "PAY_BY_INSTALMENTS",
+        items: items.map((item: any) => ({
+          name: item.name || "Product",
+          type: "Physical",
+          reference_id: item.id?.toString() || "0",
+          sku: item.sku || item.id?.toString() || "0",
+          quantity: item.quantity || 1,
+          total_amount: {
+            amount: parseFloat(item.price || "0") * (item.quantity || 1),
+            currency: (currency || "SAR").toUpperCase()
+          }
+        })),
+        consumer: {
+          first_name: customer.firstName || "Customer",
+          last_name: customer.lastName || "Name",
+          phone_number: customer.phone || "0500000000",
+          email: customer.email || "customer@example.com"
+        },
+        shipping_address: {
+          first_name: customer.firstName || "Customer",
+          last_name: customer.lastName || "Name",
+          line1: customer.address || "N/A",
+          city: customer.city || "Riyadh",
+          country_code: "SA",
+          phone_number: customer.phone || "0500000000"
+        },
+        billing_address: {
+          first_name: customer.firstName || "Customer",
+          last_name: customer.lastName || "Name",
+          line1: customer.address || "N/A",
+          city: customer.city || "Riyadh",
+          country_code: "SA",
+          phone_number: customer.phone || "0500000000"
+        },
+        merchant_url: {
+          success: returnUrl,
+          failure: cancelUrl,
+          cancel: cancelUrl,
+          notification: `${process.env.APP_URL}/api/payment/tamara/webhook`
+        }
+      };
+
+      const response = await axios.post(`${apiUrl}/checkout`, tamaraData, {
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      console.log("✅ Tamara Checkout Response:", JSON.stringify(response.data, null, 2));
+      
+      if (response.data.checkout_url) {
+        res.json({ url: response.data.checkout_url, orderId: response.data.order_id });
+      } else {
+        console.error("❌ Tamara API Error: No checkout URL returned", response.data);
+        res.status(400).json({ error: "Failed to get checkout URL from Tamara", details: response.data });
+      }
+    } catch (error: any) {
+      console.error("❌ Tamara API Error:", error.response?.data || error.message);
+      res.status(500).json({ error: "Tamara API Error", details: error.response?.data || error.message });
+    }
+  });
+
   // Payment Gateway Routes
   app.get("/api/payment-gateways", async (req, res) => {
     try {
@@ -611,8 +699,10 @@ async function startServer() {
 
   // Only listen if not in a serverless environment (like Vercel)
   if (process.env.NODE_ENV !== "production" || (!process.env.VERCEL && !process.env.NOW_REGION)) {
+    console.log(`🚀 Attempting to start server on port ${PORT}...`);
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`✅ Server successfully running on http://0.0.0.0:${PORT}`);
+      console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   }
 
