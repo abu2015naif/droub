@@ -528,6 +528,29 @@ async function startServer() {
     }
   });
 
+  // Tamara Webhook Handler
+  app.post("/api/payment/tamara/webhook", async (req, res) => {
+    try {
+      const { order_id, status, order_reference_id } = req.body;
+      console.log(`🔔 Received Tamara Webhook: Order #${order_reference_id}, Status: ${status}`);
+
+      if (status === 'authorised' || status === 'fully_captured') {
+        // Update WooCommerce order status
+        await WooCommerce.put(`orders/${order_reference_id}`, {
+          status: 'processing',
+          set_paid: true,
+          customer_note: `تم تأكيد الدفع عبر تمارا. رقم عملية تمارا: ${order_id}`
+        });
+        console.log(`✅ WooCommerce Order #${order_reference_id} updated to processing.`);
+      }
+
+      res.json({ received: true });
+    } catch (error: any) {
+      console.error("❌ Tamara Webhook Error:", error.response?.data || error.message);
+      res.status(500).json({ error: "Webhook processing failed" });
+    }
+  });
+
   // Payment Gateway Routes
   app.get("/api/payment-gateways", async (req, res) => {
     try {

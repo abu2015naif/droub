@@ -613,14 +613,6 @@ export default function App() {
       const wcOrder = await wcResponse.json();
       console.log("✅ WooCommerce Order Created:", wcOrder);
 
-      // Handle standard WooCommerce payment redirects (e.g., Tamara, etc.)
-      if (wcOrder.payment_url || wcOrder.checkout_payment_url) {
-        const redirectUrl = wcOrder.payment_url || wcOrder.checkout_payment_url;
-        console.log("🚀 Redirecting to payment gateway:", redirectUrl);
-        window.location.href = redirectUrl;
-        return;
-      }
-
       // 2. Also save to Firestore for local tracking
       await addDoc(collection(db, "orders"), {
         userId: currentUser?.uid || "guest",
@@ -758,6 +750,15 @@ export default function App() {
           alert(`خطأ في بوابة الدفع: ${telrError.message}`);
           return;
         }
+      }
+
+      // 4. Handle standard WooCommerce payment redirects (FALLBACK ONLY)
+      // This is a fallback if custom integrations above weren't triggered
+      if (wcOrder.payment_url || wcOrder.checkout_payment_url) {
+        const redirectUrl = wcOrder.payment_url || wcOrder.checkout_payment_url;
+        console.log("🚀 Redirecting to WooCommerce fallback payment URL:", redirectUrl);
+        window.location.href = redirectUrl;
+        return;
       }
 
       setCart([]);
