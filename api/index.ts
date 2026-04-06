@@ -532,7 +532,7 @@ async function startServer() {
           success: returnUrl,
           failure: cancelUrl,
           cancel: cancelUrl,
-          notification: `${process.env.APP_URL}/api/payment/tamara/webhook`
+          notification: `${(process.env.APP_URL || "").replace(/\/$/, "")}/api/payment/tamara/webhook`
         }
       };
 
