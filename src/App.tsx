@@ -2963,38 +2963,35 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
   // Tamara Widget Logic
   useEffect(() => {
     if (isOpen && product) {
-      let retryCount = 0;
-      const maxRetries = 10;
+      const scriptId = 'tamara-sdk-script';
       
-      const refreshTamara = () => {
+      const renderTamara = () => {
         // @ts-ignore
         if (window.TamaraWidgetV2 && typeof window.TamaraWidgetV2.refresh === 'function') {
           // @ts-ignore
           window.TamaraWidgetV2.refresh();
-          return true;
         }
-        return false;
+        // @ts-ignore
+        if (window.tamara && window.tamara.widget && typeof window.tamara.widget.render === 'function') {
+          // @ts-ignore
+          window.tamara.widget.render();
+        }
       };
 
-      const interval = setInterval(() => {
-        if (refreshTamara() || retryCount >= maxRetries) {
-          clearInterval(interval);
-        }
-        retryCount++;
-      }, 500);
-
-      // Also try dynamic loading if not present
-      if (!document.querySelector('script[src*="tamara-widget.js"]')) {
+      if (!document.getElementById(scriptId)) {
         const script = document.createElement('script');
+        script.id = scriptId;
         script.src = "https://cdn.tamara.co/widget/v2/tamara-widget.js";
-        script.defer = true;
+        script.async = true;
         script.onload = () => {
-          setTimeout(refreshTamara, 500);
+          setTimeout(renderTamara, 500);
         };
-        document.head.appendChild(script);
+        document.body.appendChild(script);
+      } else {
+        // Try to render multiple times to ensure it catches the DOM element
+        const timers = [500, 1500, 3000].map(delay => setTimeout(renderTamara, delay));
+        return () => timers.forEach(t => clearTimeout(t));
       }
-
-      return () => clearInterval(interval);
     }
   }, [isOpen, product]);
 
@@ -3078,12 +3075,12 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
               </div>
 
               {/* Tamara Promotional Widget */}
-              <div className="mb-8 p-5 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[120px] flex items-center justify-center">
+              <div className="mb-6 p-4 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[130px]">
                 <div 
-                  key={`tamara-widget-${product.id}-${product.price}-${isOpen}`}
-                  className="tamara-product-widget w-full" 
+                  key={`tamara-product-widget-${product.id}-${isOpen}`}
+                  className="tamara-product-widget" 
                   data-lang="ar" 
-                  data-price={parseFloat(product.price.toString()).toFixed(2)} 
+                  data-price={product.price} 
                   data-currency="SAR" 
                   data-payment-type="PAY_BY_INSTALMENTS"
                   data-number-of-installments="4"
@@ -3093,9 +3090,9 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                   data-installment-minimum-amount="1"
                   data-country-code="SA"
                 ></div>
-              </div>
-              <div className="mt-[-2rem] mb-8 text-[10px] text-gray-400 text-center font-medium">
-                متوافقة مع الشريعة الإسلامية
+                <div className="mt-2 text-[10px] text-gray-400 text-center font-medium">
+                  متوافقة مع الشريعة الإسلامية
+                </div>
               </div>
 
               {/* Attributes Selection */}
