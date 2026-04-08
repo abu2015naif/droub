@@ -2198,6 +2198,27 @@ function CheckoutPage({
   const [isPickup, setIsPickup] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const shippingCost = parseFloat(selectedShipping?.settings?.cost?.value || "0");
+  const finalTotal = total + shippingCost;
+
+  // Tamara Widget Logic for Checkout
+  useEffect(() => {
+    if (isGatewayEnabled('tamara')) {
+      const initTamara = () => {
+        // @ts-ignore
+        if (window.TamaraWidgetV2) {
+          // @ts-ignore
+          if (typeof window.TamaraWidgetV2.refresh === 'function') {
+            // @ts-ignore
+            window.TamaraWidgetV2.refresh();
+          }
+        }
+      };
+      const timers = [500, 1000, 2000].map(delay => setTimeout(initTamara, delay));
+      return () => timers.forEach(t => clearTimeout(t));
+    }
+  }, [finalTotal, paymentGateways]);
+
   const filteredShippingMethods = useMemo(() => {
     if (isPickup) return [];
     
@@ -2282,9 +2303,6 @@ function CheckoutPage({
 
     onFinalize(formData, selectedShipping, paymentMethod, extraData);
   };
-
-  const shippingCost = parseFloat(selectedShipping?.settings?.cost?.value || "0");
-  const finalTotal = total + shippingCost;
 
   if (cart.length === 0) {
     return (
@@ -2764,6 +2782,22 @@ function CheckoutPage({
               </div>
             </div>
 
+            {isGatewayEnabled('tamara') && (
+              <div className="mt-6 p-4 bg-white rounded-2xl overflow-hidden min-h-[100px] flex flex-col justify-center">
+                <div 
+                  key={`tamara-checkout-widget-${finalTotal.toFixed(2)}`}
+                  className="tamara-cart-widget" 
+                  data-lang="ar" 
+                  data-price={finalTotal.toFixed(2)} 
+                  data-currency="SAR" 
+                  data-payment-type="PAY_BY_INSTALMENTS"
+                  data-number-of-installments="4"
+                  data-public-key="5efe5280-6e1a-4b47-a18f-f245f4ff684f"
+                  data-country-code="SA"
+                ></div>
+              </div>
+            )}
+
             <p className="text-[10px] text-gray-500 mt-8 text-center">
               بالضغط على تأكيد الطلب، أنت توافق على شروط وأحكام شركة دروب السلامة.
             </p>
@@ -2963,14 +2997,20 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
   // Tamara Widget Logic
   useEffect(() => {
     if (isOpen && product) {
-      const scriptId = 'tamara-sdk-script';
-      
-      const renderTamara = () => {
+      const initTamara = () => {
         // @ts-ignore
-        if (window.TamaraWidgetV2 && typeof window.TamaraWidgetV2.refresh === 'function') {
+        if (window.TamaraWidgetV2) {
           // @ts-ignore
-          window.TamaraWidgetV2.refresh();
+          if (typeof window.TamaraWidgetV2.refresh === 'function') {
+            // @ts-ignore
+            window.TamaraWidgetV2.refresh();
+          } else if (typeof window.TamaraWidgetV2.init === 'function') {
+            // @ts-ignore
+            window.TamaraWidgetV2.init();
+          }
         }
+        
+        // Fallback for older versions or different configurations
         // @ts-ignore
         if (window.tamara && window.tamara.widget && typeof window.tamara.widget.render === 'function') {
           // @ts-ignore
@@ -2978,24 +3018,15 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
         }
       };
 
-      if (!document.getElementById(scriptId)) {
-        const script = document.createElement('script');
-        script.id = scriptId;
-        script.src = "https://cdn.tamara.co/widget/v2/tamara-widget.js";
-        script.async = true;
-        script.onload = () => {
-          setTimeout(renderTamara, 500);
-        };
-        document.body.appendChild(script);
-      } else {
-        // Try to render multiple times to ensure it catches the DOM element
-        const timers = [500, 1500, 3000].map(delay => setTimeout(renderTamara, delay));
-        return () => timers.forEach(t => clearTimeout(t));
-      }
+      // Try multiple times as the modal animation might delay DOM availability
+      const timers = [200, 500, 1000, 2000, 3000].map(delay => setTimeout(initTamara, delay));
+      return () => timers.forEach(t => clearTimeout(t));
     }
   }, [isOpen, product]);
 
   if (!product) return null;
+
+  const cleanPrice = product.price ? product.price.toString().replace(/[^\d.]/g, '') : "0";
 
   return (
     <AnimatePresence>
@@ -3075,19 +3106,17 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
               </div>
 
               {/* Tamara Promotional Widget */}
-              <div className="mb-6 p-4 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[130px]">
+              <div className="mb-6 p-4 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[140px] flex flex-col justify-center">
                 <div 
-                  key={`tamara-product-widget-${product.id}-${isOpen}`}
+                  key={`tamara-product-widget-${product.id}-${isOpen}-${cleanPrice}`}
                   className="tamara-product-widget" 
                   data-lang="ar" 
-                  data-price={product.price} 
+                  data-price={cleanPrice} 
                   data-currency="SAR" 
                   data-payment-type="PAY_BY_INSTALMENTS"
                   data-number-of-installments="4"
-                  data-disable-installment="false"
-                  data-disable-pay-later="true"
+                  data-disable-pay-later="false"
                   data-public-key="5efe5280-6e1a-4b47-a18f-f245f4ff684f"
-                  data-installment-minimum-amount="1"
                   data-country-code="SA"
                 ></div>
                 <div className="mt-2 text-[10px] text-gray-400 text-center font-medium">

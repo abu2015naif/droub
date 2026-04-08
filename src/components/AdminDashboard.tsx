@@ -204,7 +204,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
 
   const fetchShippingMethods = async () => {
     try {
-      const response = await fetch("/api/shipping/methods");
+      const response = await fetch(`/api/shipping/methods?t=${Date.now()}`);
       const data = await response.json();
       if (Array.isArray(data)) {
         setShippingMethods(data);
@@ -255,22 +255,23 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     }
   };
 
-  const updateShippingMethod = async (zoneId: number, instanceId: number, settings: any) => {
+  const updateShippingMethod = async (zoneId: number, instanceId: number, data: any) => {
     setLoading(true);
     try {
+      console.log(`📡 Updating shipping method ${instanceId} in zone ${zoneId}:`, data);
       const response = await fetch(`/api/shipping/methods/${zoneId}/${instanceId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          settings: settings
-        })
+        body: JSON.stringify(data)
       });
       if (response.ok) {
-        await fetchShippingMethods();
+        // Wait a bit for server to process
+        setTimeout(() => fetchShippingMethods(), 500);
         setIsEditingShipping(null);
       } else {
         const err = await response.json();
-        alert("فشل تحديث طريقة الشحن: " + (err.details?.message || err.error));
+        console.error("❌ Failed to update shipping method:", err);
+        alert(`فشل تحديث طريقة الشحن: ${err.details?.message || err.error || JSON.stringify(err)}`);
       }
     } catch (error) {
       console.error("Error updating shipping method:", error);
@@ -278,6 +279,17 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     } finally {
       setLoading(false);
     }
+  };
+
+  const isShippingEnabled = (m: any) => m.enabled === true || m.enabled === 'yes' || m.enabled === '1';
+
+  const toggleShippingMethod = async (method: any) => {
+    const currentlyEnabled = isShippingEnabled(method);
+    const newValue = !currentlyEnabled;
+    // Try boolean first as it's the standard for WC REST API
+    await updateShippingMethod(method.zone_id, method.instance_id, { 
+      enabled: newValue 
+    });
   };
 
   const deleteShippingMethod = async (zoneId: number, instanceId: number) => {
@@ -303,7 +315,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
 
   const fetchPaymentGateways = async () => {
     try {
-      const response = await fetch("/api/payment-gateways");
+      const response = await fetch(`/api/payment-gateways?t=${Date.now()}`);
       const data = await response.json();
       if (Array.isArray(data)) {
         setPaymentGateways(data);
@@ -319,18 +331,21 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   const updatePaymentGateway = async (id: string, data: any) => {
     setLoading(true);
     try {
+      console.log(`📡 Updating payment gateway ${id}:`, data);
       const response = await fetch(`/api/payment-gateways/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
       if (response.ok) {
-        await fetchPaymentGateways();
+        // Wait a bit for server to process
+        setTimeout(() => fetchPaymentGateways(), 500);
         setIsEditingPayment(null);
-        alert("تم تحديث وسيلة الدفع بنجاح");
+        alert("تم إرسال طلب التحديث بنجاح");
       } else {
         const err = await response.json();
-        alert("فشل تحديث وسيلة الدفع: " + (err.details?.message || err.error));
+        console.error("❌ Failed to update payment gateway:", err);
+        alert(`فشل تحديث وسيلة الدفع: ${err.details?.message || err.error || JSON.stringify(err)}`);
       }
     } catch (error) {
       console.error("Error updating payment gateway:", error);
@@ -344,7 +359,11 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
 
   const togglePaymentGateway = async (gateway: any) => {
     const currentlyEnabled = isGatewayEnabled(gateway);
-    await updatePaymentGateway(gateway.id, { enabled: !currentlyEnabled });
+    const newValue = !currentlyEnabled;
+    // Try boolean first as it's the standard for WC REST API
+    await updatePaymentGateway(gateway.id, { 
+      enabled: newValue 
+    });
   };
 
   const fetchProducts = async () => {
@@ -1367,19 +1386,32 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                                 </p>
                               </div>
                             </div>
-                            <div className="flex gap-2">
-                              <button 
-                                onClick={() => setIsEditingShipping(method)}
-                                className="p-2 hover:bg-white text-gray-600 rounded-lg transition-colors shadow-sm"
-                              >
-                                <Edit2 size={18} />
-                              </button>
-                              <button 
-                                onClick={() => deleteShippingMethod(zone.id, method.instance_id)}
-                                className="p-2 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                              >
-                                <Trash2 size={18} />
-                              </button>
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xs font-medium ${isShippingEnabled(method) ? 'text-green-600' : 'text-gray-400'}`}>
+                                  {isShippingEnabled(method) ? 'مفعل' : 'معطل'}
+                                </span>
+                                <button 
+                                  onClick={() => toggleShippingMethod(method)}
+                                  className={`w-12 h-6 rounded-full transition-colors relative flex items-center ${isShippingEnabled(method) ? 'bg-green-500' : 'bg-gray-300'}`}
+                                >
+                                  <div className={`absolute w-4 h-4 bg-white rounded-full transition-all ${isShippingEnabled(method) ? 'left-7' : 'left-1'}`} />
+                                </button>
+                              </div>
+                              <div className="flex gap-2">
+                                <button 
+                                  onClick={() => setIsEditingShipping(method)}
+                                  className="p-2 hover:bg-white text-gray-600 rounded-lg transition-colors shadow-sm"
+                                >
+                                  <Edit2 size={18} />
+                                </button>
+                                <button 
+                                  onClick={() => deleteShippingMethod(zone.id, method.instance_id)}
+                                  className="p-2 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -1414,7 +1446,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                           if (isEditingShipping) {
                             const cost = formData.get('cost') as string;
                             updateShippingMethod(isEditingShipping.zone_id, isEditingShipping.instance_id, {
-                              cost: cost
+                              settings: { cost: cost }
                             });
                           } else {
                             const zoneId = typeof isAddingShipping === 'number' ? isAddingShipping : shippingZones[0]?.id;
@@ -1642,9 +1674,9 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                             </span>
                             <button 
                               onClick={() => togglePaymentGateway(gateway)}
-                              className={`w-12 h-6 rounded-full transition-colors relative ${isGatewayEnabled(gateway) ? 'bg-green-500' : 'bg-gray-300'}`}
+                              className={`w-12 h-6 rounded-full transition-colors relative flex items-center ${isGatewayEnabled(gateway) ? 'bg-green-500' : 'bg-gray-300'}`}
                             >
-                              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${isGatewayEnabled(gateway) ? 'left-7' : 'left-1'}`} />
+                              <div className={`absolute w-4 h-4 bg-white rounded-full transition-all ${isGatewayEnabled(gateway) ? 'left-7' : 'left-1'}`} />
                             </button>
                           </div>
                           <button 
@@ -2151,16 +2183,17 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                   <X size={20} />
                 </button>
               </div>
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                const formData = new FormData(e.currentTarget);
-                const data = {
-                  title: formData.get('title'),
-                  description: formData.get('description'),
-                  enabled: formData.get('enabled') === 'on'
-                };
-                await updatePaymentGateway(isEditingPayment.id, data);
-              }} className="p-6 space-y-6">
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  const isEnabled = formData.get('enabled') === 'on';
+                  const data = {
+                    title: formData.get('title'),
+                    description: formData.get('description'),
+                    enabled: isEnabled
+                  };
+                  await updatePaymentGateway(isEditingPayment.id, data);
+                }} className="p-6 space-y-6">
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">العنوان</label>
                   <input 
@@ -2184,7 +2217,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                     type="checkbox"
                     name="enabled"
                     id="gateway_enabled"
-                    defaultChecked={isEditingPayment.enabled}
+                    defaultChecked={isGatewayEnabled(isEditingPayment)}
                     className="w-5 h-5 text-red-600 rounded border-gray-300 focus:ring-red-500"
                   />
                   <label htmlFor="gateway_enabled" className="text-sm font-bold text-gray-700">تفعيل وسيلة الدفع</label>

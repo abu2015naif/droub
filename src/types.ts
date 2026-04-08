@@ -117,5 +117,6 @@ export interface Order {
 declare global {
   interface Window {
     tamara: any;
+    TamaraWidgetV2: any;
   }
 }

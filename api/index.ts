@@ -602,11 +602,16 @@ async function startServer() {
   app.put("/api/payment-gateways/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      console.log(`📡 PUT /api/payment-gateways/${id} - Body:`, JSON.stringify(req.body));
       const response = await WooCommerce.put(`payment_gateways/${id}`, req.body);
+      console.log(`✅ WooCommerce Response (Update Gateway ${id}):`, JSON.stringify(response.data));
       res.json(response.data);
     } catch (error: any) {
-      console.error("WooCommerce API Error (Update Payment Gateway):", error.response?.data || error.message);
-      res.status(500).json({ error: "Failed to update payment gateway", details: error.response?.data });
+      console.error(`❌ WooCommerce API Error (Update Payment Gateway ${req.params.id}):`, error.response?.data || error.message);
+      res.status(500).json({ 
+        error: "Failed to update payment gateway", 
+        details: error.response?.data || error.message 
+      });
     }
   });
 
