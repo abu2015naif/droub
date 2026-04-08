@@ -2999,18 +2999,16 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
     if (isOpen && product) {
       const initTamara = () => {
         // @ts-ignore
-        if (window.TamaraWidgetV2) {
-          // @ts-ignore
-          if (typeof window.TamaraWidgetV2.refresh === 'function') {
-            // @ts-ignore
-            window.TamaraWidgetV2.refresh();
-          } else if (typeof window.TamaraWidgetV2.init === 'function') {
-            // @ts-ignore
-            window.TamaraWidgetV2.init();
+        const tamaraV2 = window.TamaraWidgetV2;
+        if (tamaraV2) {
+          if (typeof tamaraV2.refresh === 'function') {
+            tamaraV2.refresh();
+          } else if (typeof tamaraV2.init === 'function') {
+            tamaraV2.init();
           }
         }
         
-        // Fallback for older versions or different configurations
+        // Render if refresh didn't work
         // @ts-ignore
         if (window.tamara && window.tamara.widget && typeof window.tamara.widget.render === 'function') {
           // @ts-ignore
@@ -3019,14 +3017,14 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
       };
 
       // Try multiple times as the modal animation might delay DOM availability
-      const timers = [200, 500, 1000, 2000, 3000].map(delay => setTimeout(initTamara, delay));
+      const timers = [300, 800, 1500, 2500, 4000].map(delay => setTimeout(initTamara, delay));
       return () => timers.forEach(t => clearTimeout(t));
     }
   }, [isOpen, product]);
 
   if (!product) return null;
 
-  const cleanPrice = product.price ? product.price.toString().replace(/[^\d.]/g, '') : "0";
+  const cleanPrice = product.price ? parseFloat(product.price.toString().replace(/[^\d.]/g, '')).toFixed(2) : "0.00";
 
   return (
     <AnimatePresence>
