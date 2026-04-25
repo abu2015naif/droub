@@ -227,6 +227,26 @@ async function startServer() {
     }
   });
 
+  app.get("/api/products/:id/variations", async (req, res) => {
+    try {
+      const cacheKey = `product-${req.params.id}-variations`;
+      const cachedData = getCachedData(cacheKey);
+      if (cachedData) {
+        console.log(`Serving from cache: ${cacheKey}`);
+        return res.json(cachedData);
+      }
+
+      const response = await WooCommerce.get(`products/${req.params.id}/variations`, {
+        per_page: 100
+      });
+      setCachedData(cacheKey, response.data);
+      res.json(response.data);
+    } catch (error: any) {
+      console.error("WooCommerce API Error (Product Variations):", error.response?.data || error.message);
+      res.status(500).json({ error: "Failed to fetch product variations" });
+    }
+  });
+
   const clearProductCache = () => {
     // Clear all product-related cache keys
     Object.keys(cache).forEach(key => {

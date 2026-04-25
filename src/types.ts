@@ -27,6 +27,8 @@ export interface Product {
     name: string;
     options: string[];
   }[];
+  type?: 'simple' | 'variable' | 'grouped' | 'external';
+  variations?: number[];
 }
 
 export interface Category {
@@ -46,6 +48,7 @@ export interface CartItem extends Product {
   selectedAttributes?: {
     [key: string]: string;
   };
+  variation_id?: number;
 }
 
 export interface Banner {

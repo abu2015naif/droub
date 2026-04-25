@@ -133,6 +133,34 @@ export default function App() {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [paymentGateways, setPaymentGateways] = useState<any[]>([]);
   const [loadingGateways, setLoadingGateways] = useState(true);
+
+  const isGatewayEnabled = (id: string) => {
+    // Exact match first
+    let g = paymentGateways.find(gw => gw.id === id);
+    
+    // If not found, try finding by keyword (case insensitive)
+    if (!g) {
+      g = paymentGateways.find(gw => 
+        gw.id.toLowerCase().includes(id.toLowerCase()) || 
+        (gw.title && gw.title.toLowerCase().includes(id.toLowerCase()))
+      );
+    }
+    
+    if (!g) return false;
+    
+    // Support multiple "enabled" formats from different WC versions/plugins
+    return g.enabled === true || 
+           g.enabled === 'yes' || 
+           g.enabled === '1' || 
+           g.enabled === 1 || 
+           g.enabled === 'true';
+  };
+
+  const getActualGatewayId = (id: string) => {
+    const g = paymentGateways.find(gw => gw.id === id || gw.id.toLowerCase().includes(id.toLowerCase()));
+    return g ? g.id : id;
+  };
+
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Save favorites to localStorage whenever it changes
@@ -437,20 +465,32 @@ export default function App() {
     return sorted;
   }, [products, isUsingSampleData, sortBy, sortOrder]);
 
-  const addToCart = (product: Product, selectedAttributes?: { [key: string]: string }) => {
+  const addToCart = (product: Product, selectedAttributes?: { [key: string]: string }, variation?: any) => {
     setCart(prev => {
       const existing = prev.find(item => 
         item.id === product.id && 
         JSON.stringify(item.selectedAttributes || {}) === JSON.stringify(selectedAttributes || {})
       );
+      
+      const itemPrice = variation ? variation.price : product.price;
+      const itemRegularPrice = variation ? variation.regular_price : product.regular_price;
+      
       if (existing) {
         return prev.map(item => 
           (item.id === product.id && JSON.stringify(item.selectedAttributes || {}) === JSON.stringify(selectedAttributes || {}))
-            ? { ...item, quantity: item.quantity + 1 } 
+            ? { ...item, quantity: item.quantity + 1, price: itemPrice, regular_price: itemRegularPrice } 
             : item
         );
       }
-      return [...prev, { ...product, quantity: 1, selectedAttributes }];
+      
+      return [...prev, { 
+        ...product, 
+        price: itemPrice, 
+        regular_price: itemRegularPrice,
+        quantity: 1, 
+        selectedAttributes,
+        variation_id: variation?.id 
+      }];
     });
     setIsCartOpen(true);
   };
@@ -1260,6 +1300,8 @@ export default function App() {
             bankAccounts={bankAccounts}
             paymentGateways={paymentGateways}
             loadingGateways={loadingGateways}
+            isGatewayEnabled={isGatewayEnabled}
+            getActualGatewayId={getActualGatewayId}
           />
         ) : activeTab === "home" ? (
           <>
@@ -1719,6 +1761,7 @@ export default function App() {
         isFavorite={selectedProduct ? favorites.includes(selectedProduct.id) : false}
         onToggleFavorite={() => selectedProduct && toggleFavorite(selectedProduct.id)}
         allProducts={[...products, ...recentlyViewed, ...cart]}
+        isTamaraEnabled={isGatewayEnabled('tamara')}
         onProductClick={(p) => {
           setSelectedProduct(null);
           setTimeout(() => {
@@ -2077,6 +2120,14 @@ function ProductCard({ product, onAddToCart, isFavorite, onToggleFavorite, onVie
             <ShoppingCart size={20} />
           </button>
         </div>
+        
+        <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between text-[10px] text-gray-500">
+          <div className="flex flex-col">
+            <span>قسّمها على 4 دفعات بقيمة</span>
+            <span className="font-bold text-gray-700">{(parseFloat(product.price.toString().replace(/[^\d.]/g, '')) / 4).toFixed(2)} ر.س</span>
+          </div>
+          <img src="https://cdn.tamara.co/assets/svg/tamara-logo-badge-en.svg" className="h-5" alt="Tamara" referrerPolicy="no-referrer" />
+        </div>
       </div>
     </motion.div>
   );
@@ -2124,6 +2175,8 @@ interface CheckoutPageProps {
   bankAccounts: BankDetails[];
   paymentGateways: any[];
   loadingGateways: boolean;
+  isGatewayEnabled: (id: string) => boolean;
+  getActualGatewayId: (id: string) => string;
 }
 
 function CheckoutPage({ 
@@ -2138,7 +2191,9 @@ function CheckoutPage({
   showrooms,
   bankAccounts,
   paymentGateways,
-  loadingGateways
+  loadingGateways,
+  isGatewayEnabled,
+  getActualGatewayId
 }: CheckoutPageProps) {
   const [formData, setFormData] = useState({
     firstName: user?.displayName?.split(' ')[0] || '',
@@ -2152,32 +2207,6 @@ function CheckoutPage({
   });
 
   const [selectedShipping, setSelectedShipping] = useState<any>(null);
-  const isGatewayEnabled = (id: string) => {
-    // Exact match first
-    let g = paymentGateways.find(gw => gw.id === id);
-    
-    // If not found, try finding by keyword (case insensitive)
-    if (!g) {
-      g = paymentGateways.find(gw => 
-        gw.id.toLowerCase().includes(id.toLowerCase()) || 
-        (gw.title && gw.title.toLowerCase().includes(id.toLowerCase()))
-      );
-    }
-    
-    if (!g) return false;
-    
-    // Support multiple "enabled" formats from different WC versions/plugins
-    return g.enabled === true || 
-           g.enabled === 'yes' || 
-           g.enabled === '1' || 
-           g.enabled === 1 || 
-           g.enabled === 'true';
-  };
-
-  const getActualGatewayId = (id: string) => {
-    const g = paymentGateways.find(gw => gw.id === id || gw.id.toLowerCase().includes(id.toLowerCase()));
-    return g ? g.id : id;
-  };
 
   const isBankTransfer = () => {
     return isGatewayEnabled('bacs') || 
@@ -2837,21 +2866,19 @@ function CheckoutPage({
               </div>
             </div>
 
-            {isGatewayEnabled('tamara') && (
-              <div className="mt-6 p-4 bg-white/5 rounded-2xl overflow-hidden min-h-[100px] flex flex-col justify-center border border-white/10">
-                <div 
-                  key={`tamara-checkout-widget-${finalTotal.toFixed(2)}`}
-                  className="tamara-cart-widget" 
-                  data-lang="ar" 
-                  data-price={finalTotal.toFixed(2)} 
-                  data-currency="SAR" 
-                  data-color-type="dark"
-                  data-payment-type="PAY_BY_INSTALMENTS"
-                  data-number-of-installments="4"
-                  data-country-code="SA"
-                ></div>
-              </div>
-            )}
+            <div className="mt-6 p-4 bg-white/5 rounded-2xl overflow-hidden min-h-[100px] flex flex-col justify-center border border-white/10">
+              <div 
+                key={`tamara-checkout-widget-${finalTotal.toFixed(2)}`}
+                className="tamara-cart-widget" 
+                data-lang="ar" 
+                data-price={finalTotal.toFixed(2)} 
+                data-currency="SAR" 
+                data-color-type="dark"
+                data-payment-type="PAY_BY_INSTALMENTS"
+                data-number-of-installments="4"
+                data-country-code="SA"
+              ></div>
+            </div>
 
             <p className="text-[10px] text-gray-500 mt-8 text-center">
               بالضغط على تأكيد الطلب، أنت توافق على شروط وأحكام شركة دروب السلامة.
@@ -3005,18 +3032,41 @@ function ProductDescription({ html, products, onProductClick }: { html: string, 
   return <div className="prose prose-sm text-gray-600 mb-10 leading-relaxed max-w-none">{elements}</div>;
 }
 
-function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onToggleFavorite, allProducts, onProductClick }: { 
+function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onToggleFavorite, allProducts, onProductClick, isTamaraEnabled }: { 
   product: Product | null, 
   isOpen: boolean, 
   onClose: () => void,
-  onAddToCart: (p: Product, selectedAttributes?: { [key: string]: string }) => void,
+  onAddToCart: (p: Product, selectedAttributes?: { [key: string]: string }, variation?: any) => void,
   isFavorite: boolean,
   onToggleFavorite: () => void,
   allProducts: Product[],
-  onProductClick: (p: Product) => void
+  onProductClick: (p: Product) => void,
+  isTamaraEnabled?: boolean
 }) {
   const [selectedAttributes, setSelectedAttributes] = useState<{ [key: string]: string }>({});
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [variations, setVariations] = useState<any[]>([]);
+  const [loadingVariations, setLoadingVariations] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && product && (product.type === 'variable' || (product.variations && product.variations.length > 0))) {
+      setLoadingVariations(true);
+      fetch(`/api/products/${product.id}/variations`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setVariations(data);
+          }
+          setLoadingVariations(false);
+        })
+        .catch(err => {
+          console.error("Error fetching variations:", err);
+          setLoadingVariations(false);
+        });
+    } else {
+      setVariations([]);
+    }
+  }, [isOpen, product?.id]);
 
   useEffect(() => {
     setCurrentImageIndex(0);
@@ -3035,19 +3085,39 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
 
   // Switch image based on attribute selection
   useEffect(() => {
-    if (product && product.images && product.images.length > 1 && Object.keys(selectedAttributes).length > 0) {
-      const selectedValues = Object.values(selectedAttributes).map(v => (v as string).toLowerCase());
-      const matchingImageIndex = product.images.findIndex(img => 
-        selectedValues.some(val => 
-          (img.name && img.name.toLowerCase().includes(val)) || 
-          (img.alt && img.alt.toLowerCase().includes(val))
-        )
-      );
-      if (matchingImageIndex !== -1) {
-        setCurrentImageIndex(matchingImageIndex);
+    if (product && isOpen) {
+      const activeVariation = variations.find(v => {
+        return v.attributes.every((vAttr: any) => {
+          const selectedValue = selectedAttributes[vAttr.name];
+          return !vAttr.option || selectedValue === vAttr.option || selectedValue === vAttr.name;
+        });
+      });
+
+      if (activeVariation && activeVariation.image && activeVariation.image.src) {
+        // If the variation has a specific image, try to find it in the product images or just use it
+        const variationsImageSrc = activeVariation.image.src;
+        const matchingIndex = product.images.findIndex(img => img.src === variationsImageSrc);
+        if (matchingIndex !== -1) {
+          setCurrentImageIndex(matchingIndex);
+          return;
+        }
+      }
+
+      // Fallback to name-based matching if no specific variation image or not found in gallery
+      if (product.images && product.images.length > 1 && Object.keys(selectedAttributes).length > 0) {
+        const selectedValues = Object.values(selectedAttributes).map(v => (v as string).toLowerCase());
+        const matchingImageIndex = product.images.findIndex(img => 
+          selectedValues.some(val => 
+            (img.name && img.name.toLowerCase().includes(val)) || 
+            (img.alt && img.alt.toLowerCase().includes(val))
+          )
+        );
+        if (matchingImageIndex !== -1) {
+          setCurrentImageIndex(matchingImageIndex);
+        }
       }
     }
-  }, [selectedAttributes, product]);
+  }, [selectedAttributes, product, variations, isOpen]);
 
   // Tamara Widget Logic
   useEffect(() => {
@@ -3079,7 +3149,26 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
 
   if (!product) return null;
 
-  const cleanPrice = product.price ? parseFloat(product.price.toString().replace(/[^\d.]/g, '')).toFixed(2) : "0.00";
+  const getActiveVariation = () => {
+    if (!variations.length) return null;
+    return variations.find(v => {
+      // Check if all selected attributes match this variation
+      // Variations have an 'attributes' array like [{ name: 'Size', option: 'Large' }]
+      return v.attributes.every((vAttr: any) => {
+        const selectedValue = selectedAttributes[vAttr.name];
+        // In some cases WooCommerce uses slugs, in others names.
+        // Also handling cases where a variation attribute is "Any" (empty option)
+        return !vAttr.option || selectedValue === vAttr.option || selectedValue === vAttr.name;
+      });
+    });
+  };
+
+  const activeVariation = getActiveVariation();
+  const currentPrice = activeVariation ? activeVariation.price : product.price;
+  const currentRegularPrice = activeVariation ? activeVariation.regular_price : product.regular_price;
+  const currentOnSale = activeVariation ? activeVariation.on_sale : product.on_sale;
+
+  const cleanPrice = currentPrice ? parseFloat(currentPrice.toString().replace(/[^\d.]/g, '')).toFixed(2) : "0.00";
 
   return (
     <AnimatePresence>
@@ -3149,20 +3238,21 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
               
               <div className="flex items-center gap-4 mb-4">
                 <div className="text-4xl font-black text-red-700">
-                  {product.price} <span className="text-lg font-bold">ر.س</span>
+                  {currentPrice} <span className="text-lg font-bold">ر.س</span>
                 </div>
-                {product.on_sale && (
+                {currentOnSale && (
                   <div className="text-xl text-gray-400 line-through">
-                    {product.regular_price} ر.س
+                    {currentRegularPrice} ر.س
                   </div>
                 )}
+                {loadingVariations && <div className="animate-spin h-5 w-5 border-2 border-red-600 border-t-transparent rounded-full ml-2"></div>}
               </div>
 
               {/* Tamara Promotional Widget */}
-              <div className="mb-6 p-4 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[140px] flex flex-col justify-center">
+              <div className="mb-6 p-5 bg-white rounded-2xl border-2 border-gray-100 shadow-sm overflow-hidden min-h-[110px] flex flex-col justify-center hover:border-orange-200 transition-colors">
                 <div 
                   key={`tamara-product-widget-${product.id}-${isOpen}-${cleanPrice}`}
-                  className="tamara-product-widget" 
+                  className="tamara-product-widget cursor-pointer" 
                   data-lang="ar" 
                   data-price={cleanPrice} 
                   data-currency="SAR" 
@@ -3171,9 +3261,18 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                   data-disable-pay-later="false"
                   data-public-key="5efe5280-6e1a-4b47-a18f-f245f4ff684f"
                   data-country-code="SA"
-                ></div>
-                <div className="mt-2 text-[10px] text-gray-400 text-center font-medium">
-                  متوافقة مع الشريعة الإسلامية
+                >
+                  <div className="flex flex-col gap-2 text-right">
+                    <div className="flex items-start justify-between gap-4">
+                      <p className="text-[13px] text-gray-700 leading-relaxed">
+                        أو قسم فاتورتك على <span className="font-bold text-gray-950">4</span> دفعات بقيمة <span className="font-bold text-gray-950">{(parseFloat(cleanPrice) / 4).toFixed(2)} ر.س</span> بدون رسوم تأخير، متوافقة مع الشريعة الإسلامية.
+                      </p>
+                      <img src="https://cdn.tamara.co/assets/svg/tamara-logo-badge-en.svg" className="h-7 shrink-0" alt="Tamara" referrerPolicy="no-referrer" />
+                    </div>
+                    <div className="flex items-center justify-end">
+                      <span className="text-xs text-blue-600 font-bold hover:underline cursor-pointer border-b border-blue-600">اعرف أكثر</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -3211,15 +3310,15 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
 
               <div className="flex flex-col sm:flex-row gap-4">
                 <button 
-                  onClick={() => { onAddToCart(product, selectedAttributes); onClose(); }}
+                  onClick={() => { onAddToCart(product, selectedAttributes, activeVariation); onClose(); }}
                   className="flex-1 bg-gray-900 text-white py-4 rounded-2xl font-bold text-lg hover:bg-red-600 transition-all shadow-xl shadow-gray-200 flex items-center justify-center gap-3"
                 >
                   <ShoppingCart size={24} /> أضف للسلة
                 </button>
                 <button 
                   onClick={() => {
-                    const attrText = Object.entries(selectedAttributes).map(([k, v]) => `${k}: ${v}`).join(', ');
-                    const message = `السلام عليكم، أرغب في الاستفسار عن منتج: ${product.name}\n${attrText ? `الخيارات المختارة: ${attrText}\n` : ''}السعر: ${product.price} ر.س\nالرابط: ${window.location.origin}/?product=${product.id}`;
+                    const currentAttrText = Object.entries(selectedAttributes).map(([k, v]) => `${k}: ${v}`).join(', ');
+                    const message = `السلام عليكم، أرغب في الاستفسار عن منتج: ${product.name}\n${currentAttrText ? `الخيارات المختارة: ${currentAttrText}\n` : ''}السعر: ${currentPrice} ر.س\nالرابط: ${window.location.origin}/?product=${product.id}`;
                     window.open(`https://wa.me/966580410063?text=${encodeURIComponent(message)}`, '_blank');
                   }}
                   className="flex-1 bg-green-500 text-white py-4 rounded-2xl font-bold text-lg hover:bg-green-600 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-3"
