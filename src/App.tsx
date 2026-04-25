@@ -2153,9 +2153,25 @@ function CheckoutPage({
 
   const [selectedShipping, setSelectedShipping] = useState<any>(null);
   const isGatewayEnabled = (id: string) => {
-    const g = paymentGateways.find(gw => gw.id === id || gw.id.toLowerCase().includes(id.toLowerCase()));
+    // Exact match first
+    let g = paymentGateways.find(gw => gw.id === id);
+    
+    // If not found, try finding by keyword (case insensitive)
+    if (!g) {
+      g = paymentGateways.find(gw => 
+        gw.id.toLowerCase().includes(id.toLowerCase()) || 
+        (gw.title && gw.title.toLowerCase().includes(id.toLowerCase()))
+      );
+    }
+    
     if (!g) return false;
-    return g.enabled === true || g.enabled === 'yes' || g.enabled === '1';
+    
+    // Support multiple "enabled" formats from different WC versions/plugins
+    return g.enabled === true || 
+           g.enabled === 'yes' || 
+           g.enabled === '1' || 
+           g.enabled === 1 || 
+           g.enabled === 'true';
   };
 
   const getActualGatewayId = (id: string) => {
@@ -2163,24 +2179,47 @@ function CheckoutPage({
     return g ? g.id : id;
   };
 
+  const isBankTransfer = () => {
+    return isGatewayEnabled('bacs') || 
+           isGatewayEnabled('bank') || 
+           isGatewayEnabled('تحويل') || 
+           isGatewayEnabled('حوالة');
+  };
+
+  const getBankTransferGatewayId = () => {
+    const keywords = ['bacs', 'bank', 'تحويل', 'حوالة'];
+    for (const kw of keywords) {
+      if (isGatewayEnabled(kw)) return getActualGatewayId(kw);
+    }
+    return 'bacs';
+  };
+
   const [paymentMethod, setPaymentMethod] = useState<string>(() => {
     if (isGatewayEnabled('telr')) return getActualGatewayId('telr');
     if (isGatewayEnabled('applepay')) return getActualGatewayId('applepay');
     if (isGatewayEnabled('tamara')) return getActualGatewayId('tamara');
     if (isGatewayEnabled('cod')) return "cod";
-    if (isGatewayEnabled('bacs')) return "bank_transfer";
+    if (isBankTransfer()) return "bank_transfer";
     return "cod";
   });
   useEffect(() => {
     if (paymentGateways.length > 0) {
-      const currentGateway = paymentGateways.find(g => g.id === paymentMethod || (paymentMethod === 'bank_transfer' && g.id === 'bacs'));
-      const isCurrentEnabled = currentGateway && (currentGateway.enabled === true || currentGateway.enabled === 'yes' || currentGateway.enabled === '1');
+      const currentGatewayId = paymentMethod === 'bank_transfer' ? getBankTransferGatewayId() : paymentMethod;
+      const currentGateway = paymentGateways.find(g => g.id === currentGatewayId);
+      const isCurrentEnabled = currentGateway && (
+        currentGateway.enabled === true || 
+        currentGateway.enabled === 'yes' || 
+        currentGateway.enabled === '1' ||
+        currentGateway.enabled === 1 ||
+        currentGateway.enabled === 'true'
+      );
       
       if (!isCurrentEnabled) {
-        if (isGatewayEnabled('telr')) setPaymentMethod("telr");
-        else if (isGatewayEnabled('applepay')) setPaymentMethod("applepay");
+        if (isGatewayEnabled('telr')) setPaymentMethod(getActualGatewayId('telr'));
+        else if (isGatewayEnabled('applepay')) setPaymentMethod(getActualGatewayId('applepay'));
+        else if (isGatewayEnabled('tamara')) setPaymentMethod(getActualGatewayId('tamara'));
         else if (isGatewayEnabled('cod')) setPaymentMethod("cod");
-        else if (isGatewayEnabled('bacs')) setPaymentMethod("bank_transfer");
+        else if (isBankTransfer()) setPaymentMethod("bank_transfer");
       }
     }
   }, [paymentGateways]);
@@ -2594,7 +2633,7 @@ function CheckoutPage({
                       </div>
                     )}
 
-                    {isGatewayEnabled('bacs') && (
+                    {isBankTransfer() && (
                       <div 
                         onClick={() => setPaymentMethod("bank_transfer")}
                         className={`flex flex-col gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === "bank_transfer" ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
@@ -2602,7 +2641,7 @@ function CheckoutPage({
                         <div className="flex items-center gap-4">
                           <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod === "bank_transfer" ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
                           <div className="flex-1">
-                            <p className="font-bold">حوالة بنكية</p>
+                            <p className="font-bold">{paymentGateways.find(g => g.id === getBankTransferGatewayId())?.title || "حوالة بنكية"}</p>
                             <p className="text-xs text-gray-500">قم بالتحويل للحساب البنكي وارفع إيصال التحويل</p>
                           </div>
                           <CreditCard className="text-gray-400" />
@@ -2702,7 +2741,8 @@ function CheckoutPage({
 
                     {/* Fallback for other enabled gateways */}
                     {paymentGateways
-                      .filter(g => isGatewayEnabled(g.id) && !['telr', 'applepay', 'cod', 'bacs', 'tamara'].includes(g.id))
+                      .filter(g => isGatewayEnabled(g.id) && !['telr', 'applepay', 'cod', 'tamara'].includes(g.id.toLowerCase()) && 
+                                !['bank', 'bacs', 'تحويل', 'حوالة'].some(kw => g.id.toLowerCase().includes(kw) || (g.title && g.title.toLowerCase().includes(kw))))
                       .map(gateway => (
                         <div 
                           key={gateway.id}
@@ -2727,8 +2767,23 @@ function CheckoutPage({
               disabled={loading}
               className="w-full bg-red-600 text-white py-5 rounded-2xl font-bold text-xl shadow-xl shadow-red-100 hover:bg-red-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
             >
-              {loading ? <Clock className="animate-spin" /> : <ShieldCheck />}
-              {(paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay") || paymentMethod.toLowerCase().includes("tamara")) ? "المتابعة للدفع" : "تأكيد الطلب"}
+              {loading ? (
+                <>
+                  <Clock className="animate-spin" size={24} />
+                  <span>جاري معالجة الطلب...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={24} />
+                  <span>
+                    {(paymentMethod.toLowerCase().includes("telr") || 
+                      paymentMethod.toLowerCase().includes("applepay") || 
+                      paymentMethod.toLowerCase().includes("tamara")) 
+                      ? "المتابعة للدفع" 
+                      : "تأكيد الطلب"}
+                  </span>
+                </>
+              )}
             </button>
           </form>
         </div>
@@ -2783,16 +2838,16 @@ function CheckoutPage({
             </div>
 
             {isGatewayEnabled('tamara') && (
-              <div className="mt-6 p-4 bg-white rounded-2xl overflow-hidden min-h-[100px] flex flex-col justify-center">
+              <div className="mt-6 p-4 bg-white/5 rounded-2xl overflow-hidden min-h-[100px] flex flex-col justify-center border border-white/10">
                 <div 
                   key={`tamara-checkout-widget-${finalTotal.toFixed(2)}`}
                   className="tamara-cart-widget" 
                   data-lang="ar" 
                   data-price={finalTotal.toFixed(2)} 
                   data-currency="SAR" 
+                  data-color-type="dark"
                   data-payment-type="PAY_BY_INSTALMENTS"
                   data-number-of-installments="4"
-                  data-public-key="5efe5280-6e1a-4b47-a18f-f245f4ff684f"
                   data-country-code="SA"
                 ></div>
               </div>

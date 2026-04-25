@@ -33,7 +33,7 @@ async function startServer() {
       consumerSecret: consumerSecret,
       version: "wc/v3",
       queryStringAuth: false, // Use Basic Auth for HTTPS
-      timeout: 20000,
+      timeout: 60000,
       axiosConfig: {
         headers: {
           'User-Agent': 'WooCommerce-Rest-API-Client/1.0'
@@ -283,11 +283,21 @@ async function startServer() {
   app.get("/api/orders", async (req, res) => {
     try {
       const { per_page = 20, page = 1, status } = req.query;
+      const cacheKey = `orders-${per_page}-${page}-${status || 'all'}`;
+      
+      const cachedData = getCachedData(cacheKey);
+      if (cachedData) {
+        console.log(`Serving from cache: ${cacheKey}`);
+        return res.json(cachedData);
+      }
+
       const response = await WooCommerce.get("orders", {
         per_page,
         page,
         status
       });
+      
+      setCachedData(cacheKey, response.data);
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Orders):", error.response?.data || error.message);
@@ -295,9 +305,19 @@ async function startServer() {
     }
   });
 
+  const clearOrderCache = () => {
+    Object.keys(cache).forEach(key => {
+      if (key.startsWith('orders-')) {
+        delete cache[key];
+      }
+    });
+    console.log("Order cache cleared due to update/create");
+  };
+
   app.post("/api/orders", async (req, res) => {
     try {
       const response = await WooCommerce.post("orders", req.body);
+      clearOrderCache();
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Create Order):", error.response?.data || error.message);
@@ -308,6 +328,7 @@ async function startServer() {
   app.put("/api/orders/:id", async (req, res) => {
     try {
       const response = await WooCommerce.put(`orders/${req.params.id}`, req.body);
+      clearOrderCache();
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Update Order):", error.response?.data || error.message);
@@ -588,10 +609,25 @@ async function startServer() {
     }
   });
 
+  app.get("/api/cache/clear", (req, res) => {
+    Object.keys(cache).forEach(key => delete cache[key]);
+    console.log("🧹 Global cache cleared by manual request");
+    res.json({ success: true, message: "Global cache cleared" });
+  });
+
   // Payment Gateway Routes
   app.get("/api/payment-gateways", async (req, res) => {
     try {
+      console.log("📡 Fetching payment gateways from WooCommerce API...");
       const response = await WooCommerce.get("payment_gateways");
+      console.log(`✅ Received ${Array.isArray(response.data) ? response.data.length : 0} payment gateways`);
+      
+      // Log enabled gateways for debugging
+      if (Array.isArray(response.data)) {
+        const enabled = response.data.filter((g: any) => g.enabled === true || g.enabled === 'yes' || g.enabled === '1');
+        console.log("✅ Enabled gateways:", enabled.map((g: any) => `${g.id} (${g.title})`));
+      }
+
       res.json(response.data);
     } catch (error: any) {
       console.error("WooCommerce API Error (Payment Gateways):", error.response?.data || error.message);
@@ -631,22 +667,25 @@ async function startServer() {
       
       let allMethods: any[] = [];
       
-      // For each zone, get its methods
-      for (const zone of zones) {
+      // For each zone, get its methods in parallel
+      const methodsPromises = zones.map(async (zone: any) => {
         try {
           const methodsRes = await WooCommerce.get(`shipping/zones/${zone.id}/methods`);
           if (Array.isArray(methodsRes.data)) {
-            const methods = methodsRes.data.map((m: any) => ({
+            return methodsRes.data.map((m: any) => ({
               ...m,
               zone_id: zone.id,
               zone_name: zone.name
             }));
-            allMethods = [...allMethods, ...methods];
           }
         } catch (e) {
           console.error(`Error fetching methods for zone ${zone.id}:`, e);
         }
-      }
+        return [];
+      });
+
+      const methodsResults = await Promise.all(methodsPromises);
+      allMethods = methodsResults.flat();
 
       // Also check "Locations not covered by your other zones" (Zone 0)
       try {
@@ -673,6 +712,12 @@ async function startServer() {
 
   app.get("/api/shipping/zones", async (req, res) => {
     try {
+      const cacheKey = "shipping-zones-all";
+      const cachedData = getCachedData(cacheKey);
+      if (cachedData) {
+        return res.json(cachedData);
+      }
+
       const response = await WooCommerce.get("shipping/zones");
       let zones = Array.isArray(response.data) ? response.data : [];
       
@@ -686,6 +731,7 @@ async function startServer() {
         });
       }
       
+      setCachedData(cacheKey, zones);
       res.json(zones);
     } catch (error: any) {
       console.error("WooCommerce API Error (Zones):", error.response?.data || error.message);

@@ -1645,6 +1645,31 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                     <h2 className="text-2xl font-bold mb-2">طرق الدفع</h2>
                     <p className="text-gray-500">إدارة بوابات الدفع المتاحة في المتجر (مزامنة مع ووكومرس)</p>
                   </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={async () => {
+                        setLoading(true);
+                        try {
+                          await fetch("/api/cache/clear");
+                          await fetchPaymentGateways();
+                          alert("تم مسح التخزين المؤقت وتحديث البيانات");
+                        } catch (e) {
+                          alert("فشل تحديث البيانات");
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      className="bg-gray-100 text-gray-700 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-200 transition-all border border-gray-200"
+                    >
+                      <Clock size={18} className={loading ? 'animate-spin' : ''} /> تحديث ومسح الكاش
+                    </button>
+                    <button 
+                      onClick={() => fetchPaymentGateways()}
+                      className="bg-red-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-red-700 transition-all shadow-lg shadow-red-100"
+                    >
+                      <Plus size={18} /> مزامنة الآن
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6">
@@ -1656,7 +1681,10 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                             <CreditCard size={24} />
                           </div>
                           <div>
-                            <h3 className="text-lg font-bold">{gateway.title}</h3>
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="text-lg font-bold">{gateway.title}</h3>
+                              <span className="text-[10px] font-mono bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded uppercase">ID: {gateway.id}</span>
+                            </div>
                             <p className="text-sm text-gray-500 mb-2">{gateway.description}</p>
                             <div className="flex gap-2">
                               {gateway.method_supports.map((support: string) => (
