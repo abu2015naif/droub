@@ -318,7 +318,10 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       const response = await fetch(`/api/payment-gateways?t=${Date.now()}`);
       const data = await response.json();
       if (Array.isArray(data)) {
-        setPaymentGateways(data);
+        const uniqueGateways = data.filter((g, index, self) => 
+          index === self.findIndex((t) => t.id === g.id)
+        );
+        setPaymentGateways(uniqueGateways);
       } else {
         console.error("Payment gateways data is not an array:", data);
         setPaymentGateways([]);
@@ -376,7 +379,12 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
           featured: isFeatured(p)
         }));
         console.log("📡 Products fetched:", processedData.length, "items. Sample featured status:", processedData[0]?.featured);
-        setProducts(processedData);
+        
+        // Deduplicate to avoid key collisions in list rendering
+        const uniqueProducts = processedData.filter((p, index, self) => 
+          index === self.findIndex((t) => t.id === p.id)
+        );
+        setProducts(uniqueProducts);
       } else {
         console.error("Products data is not an array:", data);
         setProducts([]);
@@ -391,7 +399,11 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       const response = await fetch("/api/categories");
       const data = await response.json();
       if (Array.isArray(data)) {
-        setCategories(data);
+        // Deduplicate categories to avoid key collisions
+        const uniqueCategories = data.filter((c, index, self) => 
+          index === self.findIndex((t) => t.id === c.id)
+        );
+        setCategories(uniqueCategories);
       } else {
         console.error("Categories data is not an array:", data);
         setCategories([]);
@@ -428,7 +440,11 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
           })),
           line_items: o.line_items
         }));
-        setOrders(mappedOrders);
+        // Deduplicate orders to avoid key collisions
+        const uniqueOrders = mappedOrders.filter((o, index, self) => 
+          index === self.findIndex((t) => t.id === o.id)
+        );
+        setOrders(uniqueOrders);
       }
     } catch (error) {
       console.error("Error fetching orders:", error);
