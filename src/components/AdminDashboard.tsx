@@ -26,7 +26,7 @@ import {
   Flame
 } from "lucide-react";
 import { db, collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, query, where, getDocs, handleFirestoreError, OperationType, setDoc, getDoc } from "../firebase";
-import { Product, Showroom, BankDetails } from "../types";
+import { Product, Showroom, BankDetails, Employee } from "../types";
 
 interface Order {
   id: string;
@@ -49,22 +49,6 @@ interface Order {
     phone: string;
   };
   line_items?: any[];
-}
-
-interface Employee {
-  uid: string;
-  email: string;
-  displayName: string;
-  role: 'admin' | 'manager' | 'staff' | 'customer';
-  permissions?: {
-    products: boolean;
-    orders: boolean;
-    banners: boolean;
-    showrooms: boolean;
-    settings: boolean;
-    employees: boolean;
-    shipping: boolean;
-  };
 }
 
 interface AdminDashboardProps {
@@ -748,7 +732,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     e.preventDefault();
     setLoading(true);
     const formData = new FormData(e.currentTarget);
-    const email = formData.get("email") as string;
+    const emailInput = formData.get("email") as string;
+    const email = emailInput.trim().toLowerCase();
     const role = formData.get("role") as Employee['role'];
     
     const permissions = {
@@ -761,6 +746,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       shipping: formData.get("perm_shipping") === "on",
     };
 
+    const path = `users/${isEditingEmployee?.uid || 'new'}`;
     try {
       if (isEditingEmployee) {
         await updateDoc(doc(db, "users", isEditingEmployee.uid), {
@@ -787,7 +773,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
             role,
             permissions,
             displayName: "موظف جديد",
-            isPending: true
+            isPending: true,
+            createdAt: new Date().toISOString()
           });
         }
       }
@@ -795,22 +782,39 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       setIsEditingEmployee(null);
       alert("تم حفظ بيانات الموظف بنجاح");
     } catch (error) {
-      console.error("Error saving employee:", error);
-      alert("حدث خطأ أثناء حفظ البيانات");
+      handleFirestoreError(error, OperationType.WRITE, path);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteEmployee = async (uid: string) => {
-    if (!window.confirm("هل أنت متأكد من حذف هذا الموظف؟")) return;
+    const emp = employees.find(e => e.uid === uid);
+    if (!emp) return;
+
+    if (!window.confirm(`هل أنت متأكد من حذف الموظف ${emp.displayName || emp.email}؟`)) return;
+    
+    setLoading(true);
+    const path = `users/${uid}`;
     try {
-      // Instead of deleting, we set role to customer
-      await updateDoc(doc(db, "users", uid), { role: 'customer', permissions: null });
+      // If it's a pending user (not registered yet), delete the doc
+      // If it's a registered user, we just revoke their staff role
+      const userDoc = await getDoc(doc(db, "users", uid));
+      const userData = userDoc.data();
+      
+      if (userData?.isPending) {
+        await deleteDoc(doc(db, "users", uid));
+      } else {
+        await updateDoc(doc(db, "users", uid), { 
+          role: 'customer', 
+          permissions: null 
+        });
+      }
       alert("تم حذف الموظف بنجاح");
     } catch (error) {
-      console.error("Error deleting employee:", error);
-      alert("حدث خطأ أثناء حذف الموظف");
+      handleFirestoreError(error, OperationType.WRITE, path);
+    } finally {
+      setLoading(false);
     }
   };
 

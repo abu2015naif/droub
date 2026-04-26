@@ -38,11 +38,24 @@ import {
 } from "lucide-react";
 import { SAMPLE_PRODUCTS, SAMPLE_CATEGORIES } from "./constants";
 import { Product, Category, CartItem, Banner, Showroom, BankDetails } from "./types";
-import { auth, db, googleProvider, signInWithPopup, signOut, doc, setDoc, deleteDoc, onSnapshot, collection, getDoc, addDoc, handleFirestoreError, OperationType, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, query, where, getDocs, orderBy, RecaptchaVerifier, signInWithPhoneNumber } from "./firebase";
+import { auth, db, googleProvider, signInWithPopup, signOut, doc, setDoc, deleteDoc, onSnapshot, collection, getDoc, addDoc, handleFirestoreError, OperationType, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, query, where, getDocs, orderBy, RecaptchaVerifier, signInWithPhoneNumber, updateDoc } from "./firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import AdminDashboard from "./components/AdminDashboard";
 
+const testConnection = async () => {
+  try {
+    await getDoc(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if(error instanceof Error && error.message.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration.");
+    }
+  }
+}
+
 export default function App() {
+  useEffect(() => {
+    testConnection();
+  }, []);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
@@ -298,41 +311,45 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
+        const userEmail = (u.email || "").toLowerCase();
         // Check/Set user in Firestore
         const userRef = doc(db, "users", u.uid);
         const userSnap = await getDoc(userRef);
         
         if (!userSnap.exists()) {
-          // Check if there's a pending employee with this email
+          // Check if there's a user or pending employee with this email
           const usersRef = collection(db, "users");
-          const q = query(usersRef, where("email", "==", u.email), where("isPending", "==", true));
+          // Query for ANY doc with this email, not just pending
+          const q = query(usersRef, where("email", "==", userEmail));
           const querySnapshot = await getDocs(q);
           
           if (!querySnapshot.empty) {
-            const pendingDoc = querySnapshot.docs[0];
-            const pendingData = pendingDoc.data();
+            const existingDoc = querySnapshot.docs[0];
+            const existingData = existingDoc.data();
             
-            // Migrate pending doc to use UID as ID
+            // Migrate doc to use UID as ID if it's not already
             await setDoc(userRef, {
               uid: u.uid,
-              email: u.email,
-              displayName: u.displayName || pendingData.displayName,
+              email: userEmail,
+              displayName: u.displayName || existingData.displayName,
               photoURL: u.photoURL,
-              role: pendingData.role,
-              permissions: pendingData.permissions || null
+              role: existingData.role || "customer",
+              permissions: existingData.permissions || null
             });
             
-            // Delete the pending doc
-            await deleteDoc(doc(db, "users", pendingDoc.id));
+            // Delete the old doc if it had a different ID
+            if (existingDoc.id !== u.uid) {
+              await deleteDoc(doc(db, "users", existingDoc.id));
+            }
             
-            setUserRole(pendingData.role);
-            setUserPermissions(pendingData.permissions || null);
+            setUserRole(existingData.role || "customer");
+            setUserPermissions(existingData.permissions || null);
           } else {
-            const isFirstUser = u.email === "abu2015naif@gmail.com";
-            const role = isFirstUser ? "admin" : "customer";
+            const isAdminEmail = userEmail === "abu2015naif@gmail.com";
+            const role = isAdminEmail ? "admin" : "customer";
             await setDoc(userRef, {
               uid: u.uid,
-              email: u.email,
+              email: userEmail,
               displayName: u.displayName,
               photoURL: u.photoURL,
               role: role
@@ -341,9 +358,18 @@ export default function App() {
             setUserPermissions(null);
           }
         } else {
+          // Force admin role for the main email even if doc exists
           const data = userSnap.data();
-          setUserRole(data.role || "customer");
-          setUserPermissions(data.permissions || null);
+          const userEmail = (u.email || "").toLowerCase();
+          
+          if (userEmail === "abu2015naif@gmail.com" && data.role !== 'admin') {
+            await updateDoc(userRef, { role: 'admin' });
+            setUserRole('admin');
+            setUserPermissions(data.permissions || null);
+          } else {
+            setUserRole(data.role || "customer");
+            setUserPermissions(data.permissions || null);
+          }
         }
 
         // Fetch favorites

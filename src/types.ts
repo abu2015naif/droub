@@ -79,6 +79,22 @@ export interface BankDetails {
   active: boolean;
 }
 
+export interface Employee {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: 'admin' | 'manager' | 'staff' | 'customer';
+  permissions?: {
+    products: boolean;
+    orders: boolean;
+    banners: boolean;
+    showrooms: boolean;
+    settings: boolean;
+    employees: boolean;
+    shipping: boolean;
+  };
+}
+
 export interface CompanyInfo {
   name: string;
   taxNumber: string;

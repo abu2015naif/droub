@@ -11,21 +11,25 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
     function isAdmin() {
-      return isAuthenticated() && 
-        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-         (request.auth.token.email == "abu2015naif@gmail.com" && request.auth.token.email_verified == true));
+      return isAuthenticated() && (
+        (request.auth.token.email == "abu2015naif@gmail.com") ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
     }
 
     function hasPermission(permission) {
       return isAuthenticated() && (
-        (request.auth.token.email == "abu2015naif@gmail.com" && request.auth.token.email_verified == true) ||
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-        (
-          (!get(/databases/$(database)/documents/users/$(request.auth.uid)).data.keys().hasAny(['permissions'])) ?
+        (request.auth.token.email == "abu2015naif@gmail.com") ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (
+            (!('permissions' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions == null) ?
             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['manager', 'staff']) :
             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions.get(permission, false) == true)
-        )
+          )
+        ))
       );
     }
 
@@ -62,7 +66,8 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId) || hasPermission('employees');
+      // Master admin can do anything to any user
+      allow write: if isOwner(userId) || (request.auth.token.email == "abu2015naif@gmail.com");
       
       match /favorites/{productId} {
         allow read, write: if isOwner(userId);
