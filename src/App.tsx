@@ -41,6 +41,7 @@ import { Product, Category, CartItem, Banner, Showroom, BankDetails } from "./ty
 import { auth, db, googleProvider, signInWithPopup, signOut, doc, setDoc, deleteDoc, onSnapshot, collection, getDoc, addDoc, handleFirestoreError, OperationType, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, query, where, getDocs, orderBy, RecaptchaVerifier, signInWithPhoneNumber, updateDoc } from "./firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import AdminDashboard from "./components/AdminDashboard";
+import SEO from "./components/SEO";
 
 const testConnection = async () => {
   try {
@@ -980,6 +981,54 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900" dir="rtl">
+      {/* Dynamic SEO */}
+      {selectedProduct ? (
+        <SEO 
+          title={selectedProduct.name}
+          description={selectedProduct.description ? selectedProduct.description.replace(/<[^>]*>?/gm, '').substring(0, 160) : `اشتري ${selectedProduct.name} الآن من متجر أبو نايف. سعر منافس وجودة عالية.`}
+          image={selectedProduct.images?.[0]?.src}
+          type="product"
+          url={`/product/${selectedProduct.id}`}
+          keywords={`${selectedProduct.name}, ${selectedProduct.categories?.map(c => c.name).join(', ')}, متجر أبو نايف`}
+          schemaData={{
+            "@context": "https://schema.org/",
+            "@type": "Product",
+            "name": selectedProduct.name,
+            "image": selectedProduct.images?.map(img => img.src) || [],
+            "description": selectedProduct.description?.replace(/<[^>]*>?/gm, ''),
+            "sku": selectedProduct.sku || selectedProduct.id.toString(),
+            "offers": {
+              "@type": "Offer",
+              "url": window.location.href,
+              "priceCurrency": "SAR",
+              "price": selectedProduct.price,
+              "availability": "https://schema.org/InStock",
+              "seller": {
+                "@type": "Organization",
+                "name": "متجر أبو نايف"
+              }
+            }
+          }}
+        />
+      ) : activeTab === "home" ? (
+        <SEO 
+          title="الرئيسية"
+          description="متجر أبو نايف - وجهتك الأولى لأفضل المنتجات بجودة عالية وأسعار منافسة في المملكة العربية السعودية."
+          keywords="متجر إلكتروني, تسوق, السعودية, أبو نايف, عروض, تخفيضات"
+        />
+      ) : activeTab === "shop" ? (
+        <SEO 
+          title={selectedCategory ? categories.find(c => c.id === selectedCategory)?.name || "المتجر" : "كل المنتجات"}
+          description="تصفح تشكيلة واسعة من المنتجات المميزة في متجر أبو نايف. شحن سريع ودفع آمن."
+          keywords="منتجات, تسوق أونلاين, فئات"
+        />
+      ) : (
+        <SEO 
+          title={activeTab === "profile" ? "حسابي" : activeTab === "checkout" ? "إتمام الطلب" : "المتجر"}
+          description="متجر أبو نايف للإلكترونيات والمنتجات المميزة."
+        />
+      )}
+
       {/* Top Bar */}
       <div className="bg-red-700 text-white py-2 px-4 hidden md:block">
         <div className="max-w-7xl mx-auto flex justify-between items-center text-sm">
