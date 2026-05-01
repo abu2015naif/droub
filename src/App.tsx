@@ -121,7 +121,7 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"home" | "shop" | "admin" | "checkout" | "profile">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "shop" | "admin" | "checkout" | "profile" | "returns">("home");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [shippingMethods, setShippingMethods] = useState<any[]>([]);
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -132,7 +132,8 @@ export default function App() {
       const saved = localStorage.getItem("favorites");
       if (saved) {
         try {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          return Array.isArray(parsed) ? [...new Set(parsed)] : [];
         } catch (e) {
           return [];
         }
@@ -377,7 +378,7 @@ export default function App() {
         const favsRef = collection(db, `users/${u.uid}/favorites`);
         return onSnapshot(favsRef, (snapshot) => {
           const favIds = snapshot.docs.map(doc => parseInt(doc.id));
-          setFavorites(favIds);
+          setFavorites([...new Set(favIds)]);
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${u.uid}/favorites`);
         });
@@ -650,11 +651,13 @@ export default function App() {
     
     // Fetch shipping methods
     try {
+      console.log("📡 Fetching shipping methods...");
       const res = await fetch("/api/shipping/methods");
       const data = await res.json();
+      console.log("📦 Received shipping methods:", data);
       setShippingMethods(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("Error fetching shipping methods:", error);
+      console.error("❌ Error fetching shipping methods:", error);
     }
 
     setIsCartOpen(false);
@@ -1191,6 +1194,7 @@ export default function App() {
               <div className="flex flex-col gap-6 text-lg font-medium">
                 <button onClick={() => { setActiveTab("home"); setIsMenuOpen(false); }} className="text-right">الرئيسية</button>
                 <button onClick={() => { setActiveTab("shop"); setIsMenuOpen(false); }} className="text-right">المتجر</button>
+                <button onClick={() => { setActiveTab("returns"); setIsMenuOpen(false); }} className="text-right">سياسة الاسترجاع</button>
                 {["admin", "manager", "staff"].includes(userRole) && (
                   <button onClick={() => { setActiveTab("admin"); setIsMenuOpen(false); }} className="text-right text-red-600 flex items-center justify-end gap-2">
                     <LayoutDashboard size={20} /> لوحة الإدارة
@@ -1267,11 +1271,11 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {favorites.map(favId => {
+                    {favorites.map((favId, fIdx) => {
                       const product = products.find(p => p.id === favId);
                       if (!product) return null;
                       return (
-                        <div key={product.id} className="flex gap-4 group">
+                        <div key={`fav-item-${product.id}-${fIdx}`} className="flex gap-4 group">
                           <div className="relative w-20 h-20 shrink-0">
                             <img 
                               src={product.images[0]?.src || "https://picsum.photos/seed/safety/200"} 
@@ -1360,7 +1364,7 @@ export default function App() {
                 ) : (
                     <div className="space-y-6">
                       {cart.map((item, index) => (
-                        <div key={`${item.id}-${index}`} className="flex gap-4">
+                        <div key={`cart-drawer-item-${item.id}-${index}`} className="flex gap-4">
                           <img 
                             src={item.images[0]?.src || "https://picsum.photos/seed/safety/200"} 
                             alt={item.name}
@@ -1372,7 +1376,7 @@ export default function App() {
                             {item.selectedAttributes && Object.entries(item.selectedAttributes).length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {Object.entries(item.selectedAttributes).map(([name, value]) => (
-                                  <span key={name} className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
+                                  <span key={`cart-attr-${name}-${value}`} className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
                                     {name}: {value}
                                   </span>
                                 ))}
@@ -1426,6 +1430,8 @@ export default function App() {
             user={user} 
             onBack={() => setActiveTab("shop")} 
           />
+        ) : activeTab === "returns" ? (
+          <ReturnsPage onBack={() => setActiveTab("home")} />
         ) : activeTab === "checkout" ? (
           <CheckoutPage 
             cart={cart} 
@@ -1601,9 +1607,9 @@ export default function App() {
                     <button onClick={() => setActiveTab("shop")} className="text-red-600 font-bold hover:underline">عرض الكل</button>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
-                    {featuredProducts.map((product) => (
+                    {featuredProducts.map((product, idx) => (
                       <ProductCard 
-                        key={product.id} 
+                        key={`featured-prod-${product.id}-${idx}`} 
                         product={product} 
                         onAddToCart={addToCart} 
                         isFavorite={favorites.includes(product.id)}
@@ -1627,9 +1633,9 @@ export default function App() {
                   <button onClick={() => setActiveTab("shop")} className="text-red-600 font-bold hover:underline">عرض الكل</button>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
-                  {products.slice(0, homeSettings.productsPerPage).map((product) => (
+                  {products.slice(0, homeSettings.productsPerPage).map((product, idx) => (
                     <ProductCard 
-                      key={product.id} 
+                      key={`latest-prod-${product.id}-${idx}`} 
                       product={product} 
                       onAddToCart={addToCart} 
                       isFavorite={favorites.includes(product.id)}
@@ -1652,9 +1658,9 @@ export default function App() {
                   <button onClick={() => setActiveTab("shop")} className="text-red-600 font-bold hover:underline">عرض الكل</button>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
-                  {products.slice(homeSettings.productsPerPage, homeSettings.productsPerPage * 2).map((product) => (
+                  {products.slice(homeSettings.productsPerPage, homeSettings.productsPerPage * 2).map((product, idx) => (
                     <ProductCard 
-                      key={product.id} 
+                      key={`bestseller-prod-${product.id}-${idx}`} 
                       product={product} 
                       onAddToCart={addToCart} 
                       isFavorite={favorites.includes(product.id)}
@@ -1678,9 +1684,9 @@ export default function App() {
                     <button onClick={() => setRecentlyViewed([])} className="text-gray-400 text-sm hover:text-red-600 transition-colors">مسح الكل</button>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
-                    {recentlyViewed.map((product) => (
+                    {recentlyViewed.map((product, idx) => (
                       <ProductCard 
-                        key={product.id} 
+                        key={`recent-prod-${product.id}-${idx}`} 
                         product={product} 
                         onAddToCart={addToCart} 
                         isFavorite={favorites.includes(product.id)}
@@ -1790,9 +1796,9 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {filteredProducts.map(product => (
+                    {filteredProducts.map((product, idx) => (
                       <ProductCard 
-                        key={product.id} 
+                        key={`shop-prod-${product.id}-${idx}`} 
                         product={product} 
                         onAddToCart={addToCart} 
                         isFavorite={favorites.includes(product.id)}
@@ -1849,6 +1855,7 @@ export default function App() {
               <ul className="space-y-4 text-gray-400">
                 <li><button onClick={() => setActiveTab("home")} className="hover:text-white transition-colors">الرئيسية</button></li>
                 <li><button onClick={() => setActiveTab("shop")} className="hover:text-white transition-colors">المتجر</button></li>
+                <li><button onClick={() => setActiveTab("returns")} className="hover:text-white transition-colors">سياسة الاسترجاع</button></li>
                 <li><button className="hover:text-white transition-colors">عن الشركة</button></li>
                 <li><button className="hover:text-white transition-colors">سياسة الخصوصية</button></li>
               </ul>
@@ -1857,7 +1864,7 @@ export default function App() {
               <h4 className="text-lg font-bold mb-6">التصنيفات</h4>
               <ul className="space-y-4 text-gray-400">
                 {categories.slice(0, 4).map(cat => (
-                  <li key={cat.id}>
+                  <li key={`footer-cat-${cat.id}`}>
                     <button 
                       onClick={() => { setSelectedCategory(cat.id); setActiveTab("shop"); }}
                       className="hover:text-white transition-colors"
@@ -2032,6 +2039,84 @@ interface ProductCardProps {
   key?: any;
 }
 
+function ReturnsPage({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-20 animate-in fade-in slide-in-from-bottom-5">
+      <div className="flex justify-between items-center mb-12">
+        <h2 className="text-4xl font-black text-gray-900">سياسة الاسترجاع</h2>
+        <button 
+          onClick={onBack}
+          className="flex items-center gap-2 text-red-600 font-bold hover:gap-3 transition-all"
+        >
+          <ArrowRight size={20} /> العودة للمتجر
+        </button>
+      </div>
+
+      <div className="bg-white border border-gray-100 rounded-[32px] p-8 md:p-12 shadow-sm space-y-10 leading-relaxed text-gray-700">
+        <section className="space-y-4">
+          <div className="flex items-center gap-3 text-red-600 mb-2">
+            <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center">
+              <Clock size={20} />
+            </div>
+            <h3 className="text-xl font-bold">مهلة الاسترجاع</h3>
+          </div>
+          <p className="text-lg">
+            يحق للعميل استبدال أو استرجاع المنتجات خلال <span className="font-black text-red-600 underline underline-offset-4">7 أيام</span> من تاريخ استلام الطلب، بشرط أن يكون المنتج في حالته الأصلية وبتغليفه الأصلي.
+          </p>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-center gap-3 text-red-600 mb-2">
+            <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center">
+              <ShieldCheck size={20} />
+            </div>
+            <h3 className="text-xl font-bold">شروط الاسترجاع</h3>
+          </div>
+          <ul className="list-disc list-inside space-y-2 pr-4">
+            <li>يجب أن لا يكون المنتج قد استخدم، أو حصل على تلف.</li>
+            <li>يجب أن يكون المنتج بتغليفه الأصلي وكافة ملحقاته.</li>
+            <li>المنتجات التي تم فتح غلافها الأصلي لا يمكن استبداها أو استرجاعها إلا في حال وجود عيب مصنعي.</li>
+          </ul>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-center gap-3 text-red-600 mb-2">
+            <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center">
+              <Truck size={20} />
+            </div>
+            <h3 className="text-xl font-bold">رسوم الشحن والتوصيل</h3>
+          </div>
+          <p>
+            في حال كان الاسترجاع بسبب عيب مصنعي، يتحمل المتجر كافة تكاليف الشحن. أما في حال كان بناءً على رغبة العميل (تغيير رأي)، يتحمل العميل تكاليف الشحن والإرسال.
+          </p>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-center gap-3 text-red-600 mb-2">
+            <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center">
+              <MessageCircle size={20} />
+            </div>
+            <h3 className="text-xl font-bold">طريقة طلب الاسترجاع</h3>
+          </div>
+          <p>
+            يمكنكم البدء بطلب الاسترجاع عبر التواصل معنا من خلال الواتساب مع إرفاق رقم الطلب وصور للمنتج المراد استرجاعه.
+          </p>
+        </section>
+
+        <div className="pt-10 border-t border-gray-50 flex flex-col md:flex-row items-center justify-between gap-6">
+          <p className="text-sm text-gray-400">آخر تحديث: {new Date().toLocaleDateString('ar-SA')}</p>
+          <button 
+            onClick={() => window.open('https://wa.me/966580410063', '_blank')}
+            className="bg-green-500 text-white px-8 py-3 rounded-2xl font-bold hover:bg-green-600 transition-all flex items-center gap-2 shadow-lg shadow-green-100"
+          >
+            <MessageCircle size={20} /> تواصل مع الدعم الفني
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void }) {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2147,7 +2232,7 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
           ) : (
             <div className="space-y-6">
               {orders.map(order => (
-                <div key={order.id} className="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                <div key={`profile-order-${order.id}`} className="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                   <div className="p-6 border-b border-gray-50 flex flex-wrap justify-between items-center gap-4 bg-gray-50/50">
                     <div className="flex items-center gap-4">
                       <div className="bg-white p-3 rounded-xl border border-gray-100">
@@ -2168,8 +2253,8 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
                   
                   <div className="p-6">
                     <div className="space-y-4">
-                      {order.items.map((item: any) => (
-                        <div key={item.id} className="flex items-center gap-4">
+                      {order.items.map((item: any, idx: number) => (
+                        <div key={`${order.id}-${item.id}-${idx}`} className="flex items-center gap-4">
                           <div className="w-12 h-12 bg-gray-50 rounded-lg overflow-hidden shrink-0 border border-gray-100">
                             <img src={item.images?.[0]?.src} className="w-full h-full object-cover" alt={item.name} referrerPolicy="no-referrer" />
                           </div>
@@ -2445,12 +2530,24 @@ function CheckoutPage({
     }
   }, [finalTotal, paymentGateways]);
 
+  const isShippingEnabled = (m: any) => 
+    m.enabled === true || 
+    m.enabled === 'yes' || 
+    m.enabled === '1' || 
+    m.enabled === 1 || 
+    m.enabled === 'true' ||
+    m.enabled === 'enabled';
+
   const filteredShippingMethods = useMemo(() => {
     if (isPickup) return [];
     
-    const freeShippingMethods = shippingMethods.filter(method => {
+    const enabledMethods = shippingMethods.filter(isShippingEnabled);
+    
+    const freeShippingMethods = enabledMethods.filter(method => {
       if (method.method_id === 'free_shipping') {
-        const minAmount = parseFloat(method.settings?.min_amount?.value || "0");
+        const settings = method.settings || {};
+        const minAmountVal = settings.min_amount?.value || settings.min_amount || "0";
+        const minAmount = parseFloat(String(minAmountVal));
         return total >= minAmount;
       }
       return false;
@@ -2460,8 +2557,14 @@ function CheckoutPage({
       return freeShippingMethods;
     }
 
-    return shippingMethods.filter(method => method.method_id !== 'free_shipping');
+    return enabledMethods.filter(method => method.method_id !== 'free_shipping');
   }, [shippingMethods, total, isPickup]);
+
+  useEffect(() => {
+    if (filteredShippingMethods.length > 0 && !selectedShipping && !isPickup) {
+      setSelectedShipping(filteredShippingMethods[0]);
+    }
+  }, [filteredShippingMethods, selectedShipping, isPickup]);
 
   useEffect(() => {
     if (isPickup) {
@@ -2731,7 +2834,13 @@ function CheckoutPage({
                 <h3 className="text-xl font-bold border-b pb-4">طريقة الشحن</h3>
                 <div className="space-y-3">
                   {filteredShippingMethods.length === 0 ? (
-                    <p className="text-sm text-gray-500">جاري تحميل طرق الشحن...</p>
+                    <div className="p-8 text-center border-2 border-dashed border-gray-100 rounded-3xl bg-gray-50/50">
+                      <Truck className="mx-auto mb-3 text-gray-300" size={40} />
+                      <p className="text-sm text-gray-500 font-bold">
+                        {shippingMethods.length === 0 ? "جاري تحميل طرق الشحن من المتجر..." : "لا توجد طرق شحن مفعّلة في هذه المنطقة حالياً."}
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-1">تأكد من اختيار "توصيل للمنزل" أو تواصل معنا عبر واتساب للمساعدة.</p>
+                    </div>
                   ) : (
                     filteredShippingMethods.map((method) => (
                       <div 
@@ -2742,8 +2851,8 @@ function CheckoutPage({
                         <div className="flex items-center gap-4">
                           <div className={`w-6 h-6 rounded-full border-4 ${selectedShipping?.id === method.id ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
                           <div>
-                            <p className="font-bold">{method.method_title}</p>
-                            <p className="text-xs text-gray-500">{method.zone_name}</p>
+                            <p className="font-bold">{method.title || method.method_title}</p>
+                            <p className="text-xs text-gray-500">{method.zone_name || "شحن خارجي"}</p>
                           </div>
                         </div>
                         <span className="font-bold text-red-700">

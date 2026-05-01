@@ -84,17 +84,18 @@ async function startServer() {
     next();
   });
 
-  // Simple in-memory cache
-  const cache: { [key: string]: { data: any, timestamp: number } } = {};
-  const CACHE_TTL = 1000 * 60 * 10; // 10 minutes
+      // Simple in-memory cache
+      const cache: { [key: string]: { data: any, timestamp: number } } = {};
+      const CACHE_TTL = 1000 * 60 * 10; // 10 minutes
+      const SHORT_CACHE_TTL = 1000 * 30; // 30 seconds for dynamic data
 
-  const getCachedData = (key: string) => {
-    const cached = cache[key];
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return cached.data;
-    }
-    return null;
-  };
+      const getCachedData = (key: string, ttl: number = CACHE_TTL) => {
+        const cached = cache[key];
+        if (cached && Date.now() - cached.timestamp < ttl) {
+          return cached.data;
+        }
+        return null;
+      };
 
   const setCachedData = (key: string, data: any) => {
     cache[key] = { data, timestamp: Date.now() };
@@ -675,31 +676,40 @@ async function startServer() {
   app.get("/api/shipping/methods", async (req, res) => {
     try {
       const cacheKey = "shipping-methods-all";
-      const cachedData = getCachedData(cacheKey);
+      const cachedData = getCachedData(cacheKey, SHORT_CACHE_TTL);
       if (cachedData) {
         console.log(`Serving from cache: ${cacheKey}`);
         return res.json(cachedData);
       }
 
       // First get zones
+      console.log("📡 Fetching shipping zones...");
       const zonesRes = await WooCommerce.get("shipping/zones");
       const zones = Array.isArray(zonesRes.data) ? zonesRes.data : [];
+      console.log(`✅ Found ${zones.length} zones`);
       
       let allMethods: any[] = [];
       
       // For each zone, get its methods in parallel
       const methodsPromises = zones.map(async (zone: any) => {
         try {
+          console.log(`📡 Fetching methods for zone: ${zone.name} (${zone.id})`);
           const methodsRes = await WooCommerce.get(`shipping/zones/${zone.id}/methods`);
           if (Array.isArray(methodsRes.data)) {
-            return methodsRes.data.map((m: any) => ({
-              ...m,
-              zone_id: zone.id,
-              zone_name: zone.name
-            }));
+            console.log(`✅ Found ${methodsRes.data.length} methods for zone ${zone.id}`);
+            return methodsRes.data.map((m: any) => {
+              if (m.method_id === 'free_shipping') {
+                console.log(`📦 Free Shipping Method found in Zone ${zone.id}. Settings:`, JSON.stringify(m.settings));
+              }
+              return {
+                ...m,
+                zone_id: zone.id,
+                zone_name: zone.name
+              };
+            });
           }
-        } catch (e) {
-          console.error(`Error fetching methods for zone ${zone.id}:`, e);
+        } catch (e: any) {
+          console.error(`❌ Error fetching methods for zone ${zone.id}:`, e.response?.data || e.message);
         }
         return [];
       });
@@ -709,19 +719,27 @@ async function startServer() {
 
       // Also check "Locations not covered by your other zones" (Zone 0)
       try {
+        console.log("📡 Fetching methods for 'Rest of World' (Zone 0)...");
         const restOfWorldRes = await WooCommerce.get("shipping/zones/0/methods");
         if (Array.isArray(restOfWorldRes.data)) {
-          const restOfWorldMethods = restOfWorldRes.data.map((m: any) => ({
-            ...m,
-            zone_id: 0,
-            zone_name: "باقي المناطق"
-          }));
+          console.log(`✅ Found ${restOfWorldRes.data.length} methods for Zone 0`);
+          const restOfWorldMethods = restOfWorldRes.data.map((m: any) => {
+            if (m.method_id === 'free_shipping') {
+              console.log("📦 Free Shipping Method found in Zone 0. Settings:", JSON.stringify(m.settings));
+            }
+            return {
+              ...m,
+              zone_id: 0,
+              zone_name: "باقي المناطق"
+            };
+          });
           allMethods = [...allMethods, ...restOfWorldMethods];
         }
-      } catch (e) {
-        // Zone 0 might not have methods or might fail in some WC versions
+      } catch (e: any) {
+        console.log("ℹ️ Zone 0 methods not found or empty");
       }
 
+      console.log(`🚀 Total shipping methods found: ${allMethods.length}`);
       setCachedData(cacheKey, allMethods);
       res.json(allMethods);
     } catch (error: any) {

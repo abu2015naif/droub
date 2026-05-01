@@ -1007,8 +1007,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {products.map(product => (
-                    <div key={product.id} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm group">
+                  {products.map((product, idx) => (
+                    <div key={`admin-product-${product.id}-${idx}`} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm group">
                       <div className="aspect-square rounded-xl overflow-hidden mb-4 bg-gray-50">
                         <img src={product.images?.[0]?.src} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform" referrerPolicy="no-referrer" />
                       </div>
@@ -1627,8 +1627,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                       المنتجات المميزة الحالية ({products.filter(p => isFeatured(p)).length})
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {products.filter(p => isFeatured(p)).map(product => (
-                        <div key={product.id} className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-center gap-3">
+                      {products.filter(p => isFeatured(p)).map((product, idx) => (
+                        <div key={`admin-featured-${product.id}-${idx}`} className="bg-gray-50 border border-gray-100 rounded-2xl p-3 flex items-center gap-3">
                           <div className="w-12 h-12 rounded-lg overflow-hidden bg-white shrink-0">
                             <img src={product.images?.[0]?.src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           </div>
@@ -2089,8 +2089,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
               <div className="space-y-4">
                 <h4 className="font-bold text-gray-400 text-xs uppercase tracking-wider">المنتجات المطلوبة ({selectedOrder.items.length})</h4>
                 <div className="space-y-3">
-                  {selectedOrder.items.map((item: any) => (
-                    <div key={item.id} className="flex items-center gap-4 p-4 border border-gray-100 rounded-2xl hover:bg-gray-50 transition-colors">
+                  {selectedOrder.items.map((item: any, idx: number) => (
+                    <div key={`${selectedOrder.id}-${item.id}-${idx}`} className="flex items-center gap-4 p-4 border border-gray-100 rounded-2xl hover:bg-gray-50 transition-colors">
                       <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
                         {item.images?.[0]?.src ? (
                           <img src={item.images[0].src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
