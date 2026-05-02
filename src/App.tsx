@@ -702,6 +702,7 @@ export default function App() {
                              paymentMethod === "bank_transfer" ? "حوالة بنكية" :
                              paymentMethod.toLowerCase().includes("applepay") ? "Apple Pay" :
                              paymentMethod.toLowerCase().includes("tamara") ? "تمارا (Tamara)" :
+                             paymentMethod.toLowerCase().includes("tabby") ? "تابي (Tabby)" :
                              "بطاقة مدى / فيزا / ماستر كارد",
         set_paid: false,
         customer_note: extraData?.isCompany ? `طلب لشركة: ${extraData.companyInfo?.name || ""} - ضريبي: ${extraData.companyInfo?.taxNumber || ""} - سجل: ${extraData.companyInfo?.commercialRegister || ""}` : "",
@@ -2379,11 +2380,19 @@ function ProductCard({ product, onAddToCart, isFavorite, onToggleFavorite, onVie
         </div>
         
         <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between text-[10px] text-gray-500">
-          <div className="flex flex-col">
-            <span>قسّمها على 4 دفعات بقيمة</span>
-            <span className="font-bold text-gray-700">{(parseFloat(product.price.toString().replace(/[^\d.]/g, '')) / 4).toFixed(2)} ر.س</span>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1">
+               <span>قسّمها مع</span>
+               <img src="https://cdn.tamara.co/assets/svg/tamara-logo-badge-en.svg" className="h-3" alt="Tamara" referrerPolicy="no-referrer" />
+            </div>
+            <div className="flex items-center gap-1">
+               <span>أو مع</span>
+               <img src="https://cdn.tabby.ai/assets/images/tabby-badge.png" className="h-3 rounded" alt="Tabby" referrerPolicy="no-referrer" />
+            </div>
           </div>
-          <img src="https://cdn.tamara.co/assets/svg/tamara-logo-badge-en.svg" className="h-5" alt="Tamara" referrerPolicy="no-referrer" />
+          <div className="text-left font-bold text-gray-700">
+            {(parseFloat(product.price.toString().replace(/[^\d.]/g, '')) / 4).toFixed(2)} ر.س
+          </div>
         </div>
       </div>
     </motion.div>
@@ -2501,6 +2510,7 @@ function CheckoutPage({
     if (hasCardGateway()) return getCardGatewayId();
     if (isGatewayEnabled('applepay')) return getActualGatewayId('applepay');
     if (isGatewayEnabled('tamara')) return getActualGatewayId('tamara');
+    if (isGatewayEnabled('tabby')) return getActualGatewayId('tabby');
     if (isGatewayEnabled('cod')) return "cod";
     if (isBankTransfer()) return "bank_transfer";
     return "cod";
@@ -2522,6 +2532,7 @@ function CheckoutPage({
         if (hasCardGateway()) setPaymentMethod(getCardGatewayId());
         else if (isGatewayEnabled('applepay')) setPaymentMethod(getActualGatewayId('applepay'));
         else if (isGatewayEnabled('tamara')) setPaymentMethod(getActualGatewayId('tamara'));
+        else if (isGatewayEnabled('tabby')) setPaymentMethod(getActualGatewayId('tabby'));
         else if (isGatewayEnabled('cod')) setPaymentMethod("cod");
         else if (isBankTransfer()) setPaymentMethod("bank_transfer");
       }
@@ -2938,10 +2949,27 @@ function CheckoutPage({
                         <div className="flex-1">
                           <p className="font-bold text-lg">تمارا (Tamara)</p>
                           <p className="text-sm text-gray-500">قسم فاتورتك على 4 دفعات بدون فوائد</p>
-                          <p className="text-xs font-bold text-red-600 mt-1">4 دفعات بقيمة {(finalTotal / 4).toFixed(2)} ر.س / شهر</p>
+                          <p className="text-xs font-bold text-[#FF7062] mt-1">4 دفعات بقيمة {(finalTotal / 4).toFixed(2)} ر.س / شهر</p>
                         </div>
                         <div className="flex gap-2">
                           <img src="https://cdn.tamara.co/assets/svg/tamara-logo-badge-en.svg" className="h-10" alt="Tamara" referrerPolicy="no-referrer" />
+                        </div>
+                      </div>
+                    )}
+
+                    {isGatewayEnabled('tabby') && (
+                      <div 
+                        onClick={() => setPaymentMethod(getActualGatewayId('tabby'))}
+                        className={`flex items-center gap-4 p-5 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod.toLowerCase().includes("tabby") ? "border-[#3ADFD8] bg-[#F5FFFE]" : "border-gray-100 hover:border-gray-200"}`}
+                      >
+                        <div className={`w-6 h-6 rounded-full border-4 ${paymentMethod.toLowerCase().includes("tabby") ? "border-[#3ADFD8] bg-white" : "border-gray-200 bg-white"}`} />
+                        <div className="flex-1">
+                          <p className="font-bold text-lg">تابي (Tabby)</p>
+                          <p className="text-sm text-gray-500">ادفع ربع القيمة اليوم والباقي على 3 أشهر</p>
+                          <p className="text-xs font-bold text-[#4DE9E2] mt-1">4 دفعات (واحدة الآن و 3 لاحقاً)</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <img src="https://cdn.tabby.ai/assets/images/tabby-badge.png" className="h-10 rounded-lg" alt="Tabby" referrerPolicy="no-referrer" />
                         </div>
                       </div>
                     )}
@@ -3107,6 +3135,7 @@ function CheckoutPage({
                       paymentMethod.toLowerCase().includes("telr") || 
                       paymentMethod.toLowerCase().includes("applepay") || 
                       paymentMethod.toLowerCase().includes("tamara") ||
+                      paymentMethod.toLowerCase().includes("tabby") ||
                       paymentMethod.toLowerCase().includes("card") ||
                       paymentMethod.toLowerCase().includes("mada") ||
                       paymentMethod.toLowerCase().includes("visa")
@@ -3423,56 +3452,57 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
     }
   }, [selectedAttributes, product, variations, isOpen]);
 
-  // Tamara Widget Logic
-  useEffect(() => {
-    if (isOpen && product) {
-      const initTamara = () => {
-        // @ts-ignore
-        const tamaraV2 = window.TamaraWidgetV2;
-        if (tamaraV2) {
-          if (typeof tamaraV2.refresh === 'function') {
-            tamaraV2.refresh();
-          } else if (typeof tamaraV2.init === 'function') {
-            tamaraV2.init();
-          }
-        }
-        
-        // Render if refresh didn't work
-        // @ts-ignore
-        if (window.tamara && window.tamara.widget && typeof window.tamara.widget.render === 'function') {
-          // @ts-ignore
-          window.tamara.widget.render();
-        }
-      };
-
-      // Try multiple times as the modal animation might delay DOM availability
-      const timers = [300, 800, 1500, 2500, 4000].map(delay => setTimeout(initTamara, delay));
-      return () => timers.forEach(t => clearTimeout(t));
-    }
-  }, [isOpen, product]);
-
-  if (!product) return null;
-
   const getActiveVariation = () => {
     if (!variations.length) return null;
     return variations.find(v => {
-      // Check if all selected attributes match this variation
-      // Variations have an 'attributes' array like [{ name: 'Size', option: 'Large' }]
       return v.attributes.every((vAttr: any) => {
         const selectedValue = selectedAttributes[vAttr.name];
-        // In some cases WooCommerce uses slugs, in others names.
-        // Also handling cases where a variation attribute is "Any" (empty option)
         return !vAttr.option || selectedValue === vAttr.option || selectedValue === vAttr.name;
       });
     });
   };
 
   const activeVariation = getActiveVariation();
-  const currentPrice = activeVariation ? activeVariation.price : product.price;
+  const currentPrice = activeVariation ? activeVariation.price : product?.price;
+  const cleanPrice = currentPrice ? parseFloat(currentPrice.toString().replace(/[^\d.]/g, '')).toFixed(2) : "0.00";
+
+  // Tamara and Tabby Widget Logic
+  useEffect(() => {
+    if (isOpen && product) {
+      const initWidgets = () => {
+        // Tamara
+        // @ts-ignore
+        const tamaraV2 = window.TamaraWidgetV2;
+        if (tamaraV2) {
+          if (typeof tamaraV2.refresh === 'function') tamaraV2.refresh();
+          else if (typeof tamaraV2.init === 'function') tamaraV2.init();
+        }
+        
+        // Tabby
+        // @ts-ignore
+        if (window.Tabby && typeof window.Tabby.init === 'function') {
+           // @ts-ignore
+           window.Tabby.init({
+             selector: '#tabby-promo-wrapper',
+             currency: 'SAR',
+             price: cleanPrice,
+             installmentsCount: 4,
+             lang: 'ar',
+             source: 'product',
+             publicKey: 'pk_test_123' // Fallback or placeholder, actual works better without if not needed
+           });
+        }
+      };
+
+      const timers = [300, 800, 1500, 2500].map(delay => setTimeout(initWidgets, delay));
+      return () => timers.forEach(t => clearTimeout(t));
+    }
+  }, [isOpen, product, cleanPrice]);
+
+  if (!product) return null;
+
   const currentRegularPrice = activeVariation ? activeVariation.regular_price : product.regular_price;
   const currentOnSale = activeVariation ? activeVariation.on_sale : product.on_sale;
-
-  const cleanPrice = currentPrice ? parseFloat(currentPrice.toString().replace(/[^\d.]/g, '')).toFixed(2) : "0.00";
 
   return (
     <AnimatePresence>
@@ -3552,32 +3582,45 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                 {loadingVariations && <div className="animate-spin h-5 w-5 border-2 border-red-600 border-t-transparent rounded-full ml-2"></div>}
               </div>
 
-              {/* Tamara Promotional Widget */}
-              <div className="mb-6 p-5 bg-white rounded-2xl border-2 border-gray-100 shadow-sm overflow-hidden min-h-[110px] flex flex-col justify-center hover:border-orange-200 transition-colors">
-                <div 
-                  key={`tamara-product-widget-${product.id}-${isOpen}-${cleanPrice}`}
-                  className="tamara-product-widget cursor-pointer" 
-                  data-lang="ar" 
-                  data-price={cleanPrice} 
-                  data-currency="SAR" 
-                  data-payment-type="PAY_BY_INSTALMENTS"
-                  data-number-of-installments="4"
-                  data-disable-pay-later="true"
-                  data-pay-later="false"
-                  data-public-key="5efe5280-6e1a-4b47-a18f-f245f4ff684f"
-                  data-country-code="SA"
-                >
-                  <div className="flex flex-col gap-2 text-right">
-                    <div className="flex items-start justify-between gap-4">
-                      <p className="text-[13px] text-gray-700 leading-relaxed">
-                        أو قسم فاتورتك على <span className="font-bold text-gray-950">4</span> دفعات بقيمة <span className="font-bold text-gray-950">{(parseFloat(cleanPrice) / 4).toFixed(2)} ر.س</span> بدون رسوم تأخير، متوافقة مع الشريعة الإسلامية.
-                      </p>
-                      <img src="https://cdn.tamara.co/assets/svg/tamara-logo-badge-en.svg" className="h-7 shrink-0" alt="Tamara" referrerPolicy="no-referrer" />
-                    </div>
-                    <div className="flex items-center justify-end">
-                      <span className="text-xs text-blue-600 font-bold hover:underline cursor-pointer border-b border-blue-600">اعرف أكثر</span>
+              {/* Instalments Promotional Widgets */}
+              <div className="space-y-3 mb-6">
+                {/* Tamara */}
+                <div className="p-4 bg-white rounded-2xl border-2 border-gray-100 shadow-sm overflow-hidden min-h-[90px] flex flex-col justify-center hover:border-orange-200 transition-colors">
+                  <div 
+                    key={`tamara-product-widget-${product.id}-${isOpen}-${cleanPrice}`}
+                    className="tamara-product-widget cursor-pointer" 
+                    data-lang="ar" 
+                    data-price={cleanPrice} 
+                    data-currency="SAR" 
+                    data-payment-type="PAY_BY_INSTALMENTS"
+                    data-number-of-installments="4"
+                    data-disable-pay-later="true"
+                    data-pay-later="false"
+                    data-public-key="5efe5280-6e1a-4b47-a18f-f245f4ff684f"
+                    data-country-code="SA"
+                  >
+                    <div className="flex flex-col gap-2 text-right">
+                      <div className="flex items-start justify-between gap-4">
+                        <p className="text-[12px] text-gray-700 leading-tight">
+                          قسم فاتورتك على <span className="font-bold text-gray-950">4</span> دفعات بقيمة <span className="font-bold text-gray-950">{(parseFloat(cleanPrice) / 4).toFixed(2)} ر.س</span> مع تمارا.
+                        </p>
+                        <img src="https://cdn.tamara.co/assets/svg/tamara-logo-badge-en.svg" className="h-6 shrink-0" alt="Tamara" referrerPolicy="no-referrer" />
+                      </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Tabby (Branded manual UI as fallback for script) */}
+                <div className="p-4 bg-white rounded-2xl border-2 border-gray-100 shadow-sm overflow-hidden min-h-[90px] flex flex-col justify-center hover:border-cyan-200 transition-colors">
+                   <div className="flex flex-col gap-2 text-right">
+                      <div className="flex items-start justify-between gap-4">
+                        <p className="text-[12px] text-gray-700 leading-tight">
+                          أو ادفع <span className="font-bold text-gray-950">{(parseFloat(cleanPrice) / 4).toFixed(2)} ر.س</span> اليوم والباقي لاحقاً مع تابي.
+                        </p>
+                        <img src="https://cdn.tabby.ai/assets/images/tabby-badge.png" className="h-6 rounded shrink-0" alt="Tabby" referrerPolicy="no-referrer" />
+                      </div>
+                      <div id="tabby-promo-wrapper"></div>
+                    </div>
                 </div>
               </div>
 
