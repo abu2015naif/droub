@@ -913,6 +913,38 @@ export default function App() {
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
+    const productId = urlParams.get('product') || urlParams.get('p');
+    
+    if (productId) {
+      console.log(`🔍 Detected product ID in URL: ${productId}`);
+      const id = parseInt(productId);
+      // Check if product is already in our products list
+      const existingProduct = products.find(p => p.id === id) || featuredProducts.find(p => p.id === id);
+      
+      if (existingProduct) {
+        setSelectedProduct(existingProduct);
+      } else {
+        // Fetch product from API if not found in current lists
+        fetch(`/api/products/${id}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.id) {
+              const processed = {
+                ...data,
+                price: data.price || "0",
+                regular_price: data.regular_price || data.price || "0",
+                images: data.images || []
+              };
+              setSelectedProduct(processed);
+            }
+          })
+          .catch(err => console.error("Error fetching product from URL param:", err));
+      }
+    }
+  }, [products, featuredProducts]);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
     const telrRef = urlParams.get('telr_ref');
     const orderId = urlParams.get('order_id');
     const telrStatus = urlParams.get('telr_status');
