@@ -18,6 +18,7 @@ import {
   ChevronRight, 
   ChevronLeft,
   ShieldCheck,
+  CheckCircle,
   Flame,
   Truck,
   AlertCircle,
@@ -2615,6 +2616,16 @@ function CheckoutPage({
   const shippingCost = parseFloat(selectedShipping?.settings?.cost?.value || "0");
   const finalTotal = total + shippingCost;
 
+  const shippingThreshold = useMemo(() => {
+    const freeMethod = shippingMethods.find(m => m.method_id === 'free_shipping');
+    if (freeMethod) {
+      const settings = freeMethod.settings || {};
+      const minAmountVal = settings.min_amount?.value || settings.min_amount || "0";
+      return parseFloat(String(minAmountVal)) || 500;
+    }
+    return 500; // Default fallback
+  }, [shippingMethods]);
+
   // Tamara Widget Logic for Checkout
   useEffect(() => {
     if (isGatewayEnabled('tamara')) {
@@ -2935,6 +2946,32 @@ function CheckoutPage({
             {!isPickup && (
               <div className="bg-white border border-gray-100 rounded-3xl p-8 shadow-sm space-y-6">
                 <h3 className="text-xl font-bold border-b pb-4">طريقة الشحن</h3>
+                
+                {/* Free Shipping Progress Bar */}
+                <div className="my-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                  <div className="flex justify-between items-center mb-2">
+                     <span className="text-sm font-bold text-gray-700">
+                       {total >= shippingThreshold ? (
+                         <span className="text-green-600 flex items-center gap-1">
+                           <CheckCircle className="w-4 h-4" />
+                           مبروك! حصلت على شحن مجاني
+                         </span>
+                       ) : (
+                         `بقي لك ${(shippingThreshold - total).toFixed(2)} ر.س للحصول على شحن مجاني`
+                       )}
+                     </span>
+                     <span className="text-xs text-gray-500 font-mono">الحد: {shippingThreshold} ر.س</span>
+                  </div>
+                  <div className="h-2.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                    <motion.div 
+                      key={`shipping-progress-${total}`}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min((total / shippingThreshold) * 100, 100)}%` }}
+                      className={`h-full transition-all duration-700 ${total >= shippingThreshold ? 'bg-green-500' : 'bg-red-600'}`}
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-3">
                   {filteredShippingMethods.length === 0 ? (
                     <div className="p-8 text-center border-2 border-dashed border-gray-100 rounded-3xl bg-gray-50/50">
