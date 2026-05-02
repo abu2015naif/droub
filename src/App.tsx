@@ -835,6 +835,66 @@ export default function App() {
         }
       }
 
+      if (paymentMethod.toLowerCase().includes("tabby")) {
+        try {
+          const wcTotal = wcOrder.total;
+          const paymentAmount = (wcTotal && parseFloat(wcTotal) > 0) ? wcTotal : totalAmount.toFixed(2);
+          
+          console.log("🚀 Initiating Tabby payment:", { 
+            orderId: wcOrder.id, 
+            amount: paymentAmount,
+            wcTotal: wcTotal,
+            localTotal: totalAmount.toFixed(2)
+          });
+          
+          const tabbyResponse = await fetch("/api/payment/tabby/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderId: wcOrder.id,
+              amount: paymentAmount,
+              currency: wcOrder.currency || "SAR",
+              customer: {
+                firstName: shippingDetails.firstName,
+                lastName: shippingDetails.lastName,
+                email: currentUser?.email || shippingDetails.email,
+                phone: shippingDetails.phone,
+                address: shippingDetails.address,
+                city: shippingDetails.city
+              },
+              items: cart.map(item => ({
+                id: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: item.quantity,
+                sku: item.sku || item.id.toString()
+              })),
+              shippingAmount: shippingCost.toFixed(2),
+              returnUrl: `${window.location.origin}?payment=success&order_id=${wcOrder.id}`,
+              cancelUrl: `${window.location.origin}?payment=cancel&order_id=${wcOrder.id}`
+            })
+          });
+
+          if (!tabbyResponse.ok) {
+            const errorData = await tabbyResponse.json();
+            console.error("❌ Tabby Payment Initiation Failed:", errorData);
+            throw new Error(errorData.message || errorData.error || "Failed to initiate Tabby payment");
+          }
+
+          const tabbyResult = await tabbyResponse.json();
+          if (tabbyResult.url) {
+            console.log("🚀 Redirecting to Tabby checkout:", tabbyResult.url);
+            window.location.href = tabbyResult.url;
+            return;
+          }
+        } catch (tabbyError: any) {
+          console.error("❌ Tabby Error:", tabbyError);
+          alert("عذراً، فشل بدء عملية الدفع عبر تابي. يرجى المحاولة مرة أخرى أو اختيار وسيلة دفع أخرى.");
+          setCheckoutLoading(false);
+          return;
+        }
+      }
+
       if (paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay")) {
         try {
           // Fix: If WooCommerce returns '0' as total, use our locally calculated totalAmount

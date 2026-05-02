@@ -630,6 +630,129 @@ async function startServer() {
     }
   });
 
+  // Tabby Payment Gateway Integration
+  app.post("/api/payment/tabby/checkout", async (req, res) => {
+    try {
+      const { orderId, amount, currency, customer, items, shippingAmount, returnUrl, cancelUrl } = req.body;
+      const secretKey = process.env.TABBY_SECRET_KEY;
+      const apiUrl = process.env.TABBY_API_URL || "https://api.tabby.ai/api/v2";
+
+      if (!secretKey) {
+        console.error("❌ Tabby Secret Key is missing in environment variables.");
+        return res.status(500).json({ error: "Tabby configuration missing (Secret Key)" });
+      }
+
+      console.log(`📡 Initiating Tabby checkout for Order #${orderId}, Amount: ${amount} ${currency}`);
+
+      // Format phone number (expects +966...)
+      let phone = customer.phone || "500000000";
+      phone = phone.replace(/\s+/g, '');
+      if (phone.startsWith('05')) {
+        phone = '+966' + phone.substring(1);
+      } else if (phone.startsWith('5')) {
+        phone = '+966' + phone;
+      } else if (!phone.startsWith('+')) {
+        phone = '+966' + phone;
+      }
+
+      const tabbyData = {
+        payment: {
+          amount: parseFloat(amount).toFixed(2),
+          currency: (currency || "SAR").toUpperCase(),
+          description: `Order #${orderId} from Droub Al Salamah`,
+          buyer: {
+            phone: phone,
+            email: customer.email || "customer@example.com",
+            name: `${customer.firstName} ${customer.lastName}`
+          },
+          shipping_address: {
+            city: customer.city || "Riyadh",
+            address: customer.address || "N/A",
+            zip: "12345"
+          },
+          order: {
+            tax_amount: "0.00",
+            shipping_amount: parseFloat(shippingAmount || "0").toFixed(2),
+            discount_amount: "0.00",
+            updated_at: new Date().toISOString(),
+            reference_id: orderId.toString(),
+            items: items.map((item: any) => ({
+              title: item.name || "Product",
+              description: item.name || "Product",
+              quantity: item.quantity || 1,
+              unit_price: parseFloat(item.price || "0").toFixed(2),
+              discount_amount: "0.00",
+              reference_id: item.id?.toString() || "0",
+              ordered: item.quantity || 1,
+              captured: 0,
+              shipped: 0,
+              refunded: 0,
+              gender: "NA",
+              category: "Safety"
+            }))
+          }
+        },
+        lang: "ar",
+        merchant_urls: {
+          success: returnUrl,
+          cancel: cancelUrl,
+          failure: cancelUrl
+        }
+      };
+
+      console.log("📡 Tabby Payload:", JSON.stringify(tabbyData, null, 2));
+
+      const response = await axios.post(`${apiUrl}/checkout`, tabbyData, {
+        headers: {
+          'Authorization': `Bearer ${secretKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log("✅ Tabby Checkout Response:", JSON.stringify(response.data, null, 2));
+      
+      if (response.data.configuration && response.data.configuration.available_products) {
+        // Tabby redirects via a web pointer
+        const checkoutUrl = response.data.configuration.available_products.installments?.[0]?.web_url;
+        if (checkoutUrl) {
+          res.json({ url: checkoutUrl, paymentId: response.data.id });
+        } else {
+          res.status(400).json({ error: "No installments products available from Tabby", details: response.data });
+        }
+      } else {
+        res.status(400).json({ error: "Failed to get checkout URL from Tabby", details: response.data });
+      }
+    } catch (error: any) {
+      const errorDetail = error.response?.data || error.message;
+      console.error("❌ Tabby API Error:", JSON.stringify(errorDetail, null, 2));
+      res.status(500).json({ 
+        error: "Tabby API Error", 
+        message: error.response?.data?.message || error.message,
+        details: errorDetail 
+      });
+    }
+  });
+
+  app.post("/api/payment/tabby/webhook", async (req, res) => {
+    try {
+      const { id, status, order } = req.body;
+      const orderReferenceId = order?.reference_id;
+      console.log(`🔔 Received Tabby Webhook: Order #${orderReferenceId}, Status: ${status}`);
+
+      if (status === 'authorized' || status === 'closed') {
+        await WooCommerce.put(`orders/${orderReferenceId}`, {
+          status: 'processing',
+          set_paid: true,
+          customer_note: `تم تأكيد الدفع عبر تابي. رقم عملية تابي: ${id}`
+        });
+      }
+      res.json({ received: true });
+    } catch (error: any) {
+      console.error("❌ Tabby Webhook Error:", error.response?.data || error.message);
+      res.status(500).json({ error: "Webhook processing failed" });
+    }
+  });
+
   app.get("/api/cache/clear", (req, res) => {
     Object.keys(cache).forEach(key => delete cache[key]);
     console.log("🧹 Global cache cleared by manual request");
