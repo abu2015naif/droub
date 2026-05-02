@@ -1840,9 +1840,9 @@ export default function App() {
                     >
                       الكل
                     </button>
-                    {categories.map(cat => (
+                    {categories.map((cat, idx) => (
                       <button 
-                        key={cat.id}
+                        key={`${cat.id}-${idx}`}
                         onClick={() => setSelectedCategory(cat.id)}
                         className={`w-full text-right px-4 py-2 rounded-lg transition-colors ${selectedCategory === cat.id ? "bg-red-600 text-white" : "hover:bg-gray-50"}`}
                       >
@@ -1956,8 +1956,8 @@ export default function App() {
             <div>
               <h4 className="text-lg font-bold mb-6">التصنيفات</h4>
               <ul className="space-y-4 text-gray-400">
-                {categories.slice(0, 4).map(cat => (
-                  <li key={`footer-cat-${cat.id}`}>
+                {categories.slice(0, 4).map((cat, idx) => (
+                  <li key={`footer-cat-${cat.id}-${idx}`}>
                     <button 
                       onClick={() => { setSelectedCategory(cat.id); setActiveTab("shop"); }}
                       className="hover:text-white transition-colors"
@@ -2447,7 +2447,7 @@ function ProductCard({ product, onAddToCart, isFavorite, onToggleFavorite, onVie
             </div>
             <div className="flex items-center gap-1">
                <span>أو مع</span>
-               <img src="https://cdn.tabby.ai/assets/images/tabby-badge.png" className="h-3 rounded" alt="Tabby" referrerPolicy="no-referrer" />
+               <img src="/tabby-logo-en.svg" className="h-4" alt="Tabby" />
             </div>
           </div>
           <div className="text-left font-bold text-gray-700">
@@ -2783,9 +2783,9 @@ function CheckoutPage({
                 <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
                   <label className="text-sm font-bold text-gray-600">اختر المعرض للاستلام</label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {showrooms.filter(s => s.active).map(showroom => (
+                    {showrooms.filter(s => s.active).map((showroom, idx) => (
                       <div 
-                        key={showroom.id}
+                        key={`${showroom.id}-${idx}`}
                         onClick={() => setSelectedShowroom(showroom)}
                         className={`p-4 border-2 rounded-2xl cursor-pointer transition-all ${selectedShowroom?.id === showroom.id ? 'border-red-600 bg-red-50' : 'border-gray-100 hover:border-gray-200'}`}
                       >
@@ -3029,7 +3029,7 @@ function CheckoutPage({
                           <p className="text-xs font-bold text-[#4DE9E2] mt-1">4 دفعات (واحدة الآن و 3 لاحقاً)</p>
                         </div>
                         <div className="flex gap-2">
-                          <img src="https://cdn.tabby.ai/assets/images/tabby-badge.png" className="h-10 rounded-lg" alt="Tabby" referrerPolicy="no-referrer" />
+                          <img src="/tabby-logo-en.svg" className="h-10" alt="Tabby" />
                         </div>
                       </div>
                     )}
@@ -3082,9 +3082,9 @@ function CheckoutPage({
                             <div className="space-y-3">
                               <label className="text-sm font-bold text-gray-600">اختر الحساب البنكي للتحويل</label>
                               <div className="grid grid-cols-1 gap-3">
-                                {bankAccounts.filter(b => b.active).map(account => (
+                                {bankAccounts.filter(b => b.active).map((account, idx) => (
                                   <div 
-                                    key={account.id}
+                                    key={`${account.id}-${idx}`}
                                     onClick={() => setSelectedBankAccount(account)}
                                     className={`p-4 border-2 rounded-2xl cursor-pointer transition-all ${selectedBankAccount?.id === account.id ? 'border-red-600 bg-red-50' : 'border-gray-100 hover:border-gray-200'}`}
                                   >
@@ -3159,9 +3159,9 @@ function CheckoutPage({
                                 !['tamara', 'tabby', 'cod', 'cash_on_delivery', 'applepay', 'apple_pay'].some(id => g.id.toLowerCase().includes(id)) && 
                                 !['bank', 'bacs', 'تحويل', 'حوالة'].some(kw => g.id.toLowerCase().includes(kw) || (g.title && g.title.toLowerCase().includes(kw))) &&
                                 !['telr', 'card', 'mada', 'visa', 'master', 'بطاقة', 'فيزا', 'مدى'].some(kw => g.id.toLowerCase().includes(kw) || (g.title && g.title.toLowerCase().includes(kw))))
-                      .map(gateway => (
+                      .map((gateway, idx) => (
                         <div 
-                          key={gateway.id}
+                          key={`${gateway.id}-${idx}`}
                           onClick={() => setPaymentMethod(gateway.id)}
                           className={`flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${paymentMethod === gateway.id ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
                         >
@@ -3609,7 +3609,7 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                 <div className="p-4 bg-white/50 backdrop-blur-sm flex gap-2 overflow-x-auto no-scrollbar">
                   {product.images.map((img, idx) => (
                     <button
-                      key={img.id || idx}
+                      key={`prod-img-${img.id || idx}-${idx}`}
                       onClick={() => setCurrentImageIndex(idx)}
                       className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition-all shrink-0 ${
                         currentImageIndex === idx ? "border-red-600 scale-105" : "border-transparent opacity-60 hover:opacity-100"
@@ -3677,7 +3677,7 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                         <p className="text-[12px] text-gray-700 leading-tight">
                           أو ادفع <span className="font-bold text-gray-950">{(parseFloat(cleanPrice) / 4).toFixed(2)} ر.س</span> اليوم والباقي لاحقاً مع تابي.
                         </p>
-                        <img src="https://cdn.tabby.ai/assets/images/tabby-badge.png" className="h-6 rounded shrink-0" alt="Tabby" referrerPolicy="no-referrer" />
+                        <img src="/tabby-logo-en.svg" className="h-8 shrink-0" alt="Tabby" />
                       </div>
                       <div id="tabby-promo-wrapper"></div>
                     </div>
@@ -3691,9 +3691,9 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                     <div key={attr.id || attr.name} className="space-y-3">
                       <label className="text-sm font-bold text-gray-700">{attr.name}</label>
                       <div className="flex flex-wrap gap-2">
-                        {attr.options.map(option => (
+                        {attr.options.map((option, idx) => (
                           <button
-                            key={option}
+                            key={`${option}-${idx}`}
                             onClick={() => setSelectedAttributes(prev => ({ ...prev, [attr.name]: option }))}
                             className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border-2 ${
                               selectedAttributes[attr.name] === option
