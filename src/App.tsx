@@ -705,6 +705,7 @@ export default function App() {
                              paymentMethod.toLowerCase().includes("tamara") ? "تمارا (Tamara)" :
                              paymentMethod.toLowerCase().includes("tabby") ? "تابي (Tabby)" :
                              "بطاقة مدى / فيزا / ماستر كارد",
+        status: "pending",
         set_paid: false,
         customer_note: extraData?.isCompany ? `طلب لشركة: ${extraData.companyInfo?.name || ""} - ضريبي: ${extraData.companyInfo?.taxNumber || ""} - سجل: ${extraData.companyInfo?.commercialRegister || ""}` : "",
         billing: {
@@ -717,6 +718,15 @@ export default function App() {
           country: "SA",
           email: currentUser?.email || shippingDetails.email || "",
           phone: shippingDetails.phone || ""
+        },
+        shipping: {
+          first_name: shippingDetails.firstName || "",
+          last_name: shippingDetails.lastName || "",
+          address_1: shippingDetails.address || "",
+          city: shippingDetails.city || "",
+          state: shippingDetails.state || "Riyadh",
+          postcode: shippingDetails.postcode || "12345",
+          country: "SA"
         },
         line_items: cart.map(item => ({
           product_id: item.id,
@@ -735,6 +745,8 @@ export default function App() {
         ] : []
       };
 
+      console.log("🚀 Prepared WC Order Data:", JSON.stringify(wcOrderData, null, 2));
+
       const wcResponse = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -751,30 +763,37 @@ export default function App() {
       console.log("✅ WooCommerce Order Created:", wcOrder);
 
       // 2. Also save to Firestore for local tracking
-      await addDoc(collection(db, "orders"), {
-        userId: currentUser?.uid || "guest",
-        customerName: `${shippingDetails.firstName || ""} ${shippingDetails.lastName || ""}`.trim() || "عميل",
-        customerEmail: currentUser?.email || shippingDetails.email || "",
-        items: cart.map(item => ({
-          id: item.id || 0,
-          name: item.name || "",
-          price: item.price || 0,
-          quantity: item.quantity || 0,
-          image: item.images?.[0]?.src || item.image || "",
-          selectedAttributes: item.selectedAttributes ? JSON.parse(JSON.stringify(item.selectedAttributes)) : null
-        })),
-        total: parseFloat(wcOrder.total || totalAmount.toString()) || totalAmount,
-        status: 'pending',
-        wcOrderId: wcOrder.id || 0,
-        billing: JSON.parse(JSON.stringify(wcOrderData.billing)),
-        payment_method: paymentMethod,
-        payment_method_title: wcOrderData.payment_method_title,
-        isCompany: extraData?.isCompany || false,
-        companyInfo: extraData?.companyInfo ? JSON.parse(JSON.stringify(extraData.companyInfo)) : null,
-        pickupShowroom: extraData?.pickupShowroom ? JSON.parse(JSON.stringify(extraData.pickupShowroom)) : null,
-        bankTransferInfo: extraData?.bankTransferInfo ? JSON.parse(JSON.stringify(extraData.bankTransferInfo)) : null,
-        createdAt: new Date().toISOString()
-      });
+      try {
+        console.log("🔥 Saving order to Firestore for local tracking...");
+        await addDoc(collection(db, "orders"), {
+          userId: currentUser?.uid || "guest",
+          customerName: `${shippingDetails.firstName || ""} ${shippingDetails.lastName || ""}`.trim() || "عميل",
+          customerEmail: currentUser?.email || shippingDetails.email || "",
+          items: cart.map(item => ({
+            id: item.id || 0,
+            name: item.name || "",
+            price: item.price || 0,
+            quantity: item.quantity || 0,
+            image: item.images?.[0]?.src || item.image || "",
+            selectedAttributes: item.selectedAttributes ? JSON.parse(JSON.stringify(item.selectedAttributes)) : null
+          })),
+          total: parseFloat(wcOrder.total || totalAmount.toString()) || totalAmount,
+          status: 'pending',
+          wcOrderId: wcOrder.id || 0,
+          billing: JSON.parse(JSON.stringify(wcOrderData.billing)),
+          payment_method: paymentMethod,
+          payment_method_title: wcOrderData.payment_method_title,
+          isCompany: extraData?.isCompany || false,
+          companyInfo: extraData?.companyInfo ? JSON.parse(JSON.stringify(extraData.companyInfo)) : null,
+          pickupShowroom: extraData?.pickupShowroom ? JSON.parse(JSON.stringify(extraData.pickupShowroom)) : null,
+          bankTransferInfo: extraData?.bankTransferInfo ? JSON.parse(JSON.stringify(extraData.bankTransferInfo)) : null,
+          createdAt: new Date().toISOString()
+        });
+        console.log("✅ Order saved to Firestore.");
+      } catch (fsError) {
+        console.error("⚠️ Firestore Order Save Error (non-blocking):", fsError);
+        // Continue even if Firestore fails to save, as WooCommerce order is already created
+      }
 
       if (paymentMethod.toLowerCase().includes("tamara")) {
         try {

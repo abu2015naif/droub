@@ -81,7 +81,7 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || hasPermission('orders'));
-      allow create: if isAuthenticated();
+      allow create: if true;
       allow update, delete: if hasPermission('orders');
     }
 

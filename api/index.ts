@@ -6,6 +6,9 @@ import axios from "axios";
 import https from "https";
 import fs from "fs";
 import cors from "cors";
+import multer from "multer";
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 dotenv.config();
 
@@ -138,6 +141,72 @@ async function startServer() {
     }
   });
 
+  // Media Upload Route
+  app.post("/api/media", upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      console.log(`📡 Uploading media to WordPress: ${req.file.originalname} (${req.file.mimetype})`);
+      
+      const wpUser = process.env.WP_USERNAME || "khaled4ever";
+      // Support both WP_APP_KEY (requested) and WP_APP_PASS
+      const rawPass = process.env.WP_APP_KEY || process.env.WP_APP_PASS;
+      const wpPass = rawPass ? rawPass.replace(/\s+/g, '') : null;
+
+      if (!wpPass) {
+        return res.status(400).json({ error: "الرجاء إضافة مفتاح التطبيق (WP_APP_KEY) في إعدادات التطبيق (Secrets)." });
+      }
+
+      console.log(`📡 Attempting WordPress Media Upload...`);
+      console.log(`👤 Using Identity: ${wpUser}`);
+
+      // Using Basic Auth with WordPress Application Passwords
+      const authHeader = Buffer.from(`${wpUser}:${wpPass}`).toString('base64');
+
+      const response = await axios.post(`${siteUrl}/wp-json/wp/v2/media`, req.file.buffer, {
+        headers: {
+          'Content-Type': req.file.mimetype,
+          'Content-Disposition': `attachment; filename="${encodeURIComponent(req.file.originalname)}"`,
+          'Authorization': `Basic ${authHeader}`
+        },
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: false
+        })
+      });
+
+      console.log(`✅ Media uploaded successfully. ID: ${response.data.id}`);
+      res.json(response.data);
+    } catch (error: any) {
+      const errorData = error.response?.data;
+      const status = error.response?.status;
+      const wpUser = process.env.WP_USERNAME || "khaled4ever";
+      
+      console.error(`❌ WordPress Media API Error [${status}]:`, JSON.stringify(errorData, null, 2) || error.message);
+      
+      let customError = "فشل رفع الصورة لووردبريس";
+      if (errorData?.message) {
+        // Strip HTML tags if present
+        customError = errorData.message.replace(/<[^>]*>?/gm, '');
+        
+        // Detailed troubleshooting for "Unknown username"
+        if (customError.includes("Unknown username") || customError.includes("اسم مستخدم غير معروف")) {
+          customError = `خطأ: اسم المستخدم (${wpUser}) غير معروف في ووردبريس. جرب استخدام بريدك الإلكتروني بدلاً من الاسم في خانة WP_USERNAME.`;
+        }
+      } else if (status === 401) {
+        customError = "فشل التحقق: اسم المستخدم أو كلمة مرور التطبيق (Application Password) غير صحيحة.";
+      } else if (status === 403) {
+        customError = "خطأ في الصلاحيات: هذا المستخدم لا يمتلك صلاحية لرفع الملفات.";
+      }
+
+      res.status(status || 500).json({ 
+        error: customError,
+        details: errorData || error.message 
+      });
+    }
+  });
+
   app.get(["/api/products", "/products"], async (req, res) => {
     try {
       const { per_page = 20, page = 1, category, search, featured, orderby, order } = req.query;
@@ -260,11 +329,16 @@ async function startServer() {
 
   app.post("/api/products", async (req, res) => {
     try {
+      console.log("📝 Creating new product in WooCommerce...");
+      console.log("📦 Request Body:", JSON.stringify(req.body, null, 2));
+      
       const response = await WooCommerce.post("products", req.body);
+      
+      console.log("✅ Product created successfully. ID:", response.data.id);
       clearProductCache();
       res.json(response.data);
     } catch (error: any) {
-      console.error("WooCommerce API Error (Create Product):", error.response?.data || error.message);
+      console.error("❌ WooCommerce API Error (Create Product):", JSON.stringify(error.response?.data, null, 2) || error.message);
       res.status(500).json({ error: "Failed to create product", details: error.response?.data });
     }
   });
@@ -276,27 +350,36 @@ async function startServer() {
         updateData.featured = updateData.featured === true || String(updateData.featured) === "true";
       }
       
-      console.log(`📡 Updating product ${req.params.id} with:`, updateData);
+      console.log(`📡 Updating product ${req.params.id}...`);
+      console.log("📦 Update Payload:", JSON.stringify(updateData, null, 2));
+      
       const response = await WooCommerce.put(`products/${req.params.id}`, updateData);
-      console.log(`✅ Product ${req.params.id} updated successfully. New featured status:`, response.data.featured);
+      
+      console.log(`✅ Product ${req.params.id} updated successfully.`);
       clearProductCache();
       res.json(response.data);
     } catch (error: any) {
-      console.error("❌ WooCommerce API Error (Update Product):", error.response?.data || error.message);
+      console.error(`❌ WooCommerce API Error (Update Product ${req.params.id}):`, JSON.stringify(error.response?.data, null, 2) || error.message);
       res.status(500).json({ error: "Failed to update product", details: error.response?.data });
     }
   });
 
   app.delete("/api/products/:id", async (req, res) => {
     try {
+      console.log(`📡 Attempting to delete product ${req.params.id}...`);
       const response = await WooCommerce.delete(`products/${req.params.id}`, {
         force: true // Permanently delete
       });
+      
+      console.log(`✅ Product ${req.params.id} deleted successfully.`);
       clearProductCache();
       res.json(response.data);
     } catch (error: any) {
-      console.error("WooCommerce API Error (Delete Product):", error.response?.data || error.message);
-      res.status(500).json({ error: "Failed to delete product", details: error.response?.data });
+      console.error(`❌ WooCommerce API Error (Delete Product ${req.params.id}):`, JSON.stringify(error.response?.data, null, 2) || error.message);
+      res.status(500).json({ 
+        error: "Failed to delete product", 
+        details: error.response?.data || error.message 
+      });
     }
   });
 
@@ -337,23 +420,41 @@ async function startServer() {
 
   app.post("/api/orders", async (req, res) => {
     try {
+      console.log("📝 Creating new order in WooCommerce...");
+      console.log("📦 Order Data:", JSON.stringify(req.body, null, 2));
+      
       const response = await WooCommerce.post("orders", req.body);
+      
+      console.log("✅ WooCommerce Order Created successfully. ID:", response.data.id);
       clearOrderCache();
       res.json(response.data);
     } catch (error: any) {
-      console.error("WooCommerce API Error (Create Order):", error.response?.data || error.message);
-      res.status(500).json({ error: "Failed to create order", details: error.response?.data });
+      console.error("❌ WooCommerce API Error (Create Order):", JSON.stringify(error.response?.data, null, 2) || error.message);
+      res.status(500).json({ 
+        error: "Failed to create order", 
+        message: error.response?.data?.message || error.message,
+        details: error.response?.data 
+      });
     }
   });
 
   app.put("/api/orders/:id", async (req, res) => {
     try {
+      console.log(`📡 Updating order ${req.params.id}...`);
+      console.log("📦 Update Payload:", JSON.stringify(req.body, null, 2));
+      
       const response = await WooCommerce.put(`orders/${req.params.id}`, req.body);
+      
+      console.log(`✅ Order ${req.params.id} updated successfully.`);
       clearOrderCache();
       res.json(response.data);
     } catch (error: any) {
-      console.error("WooCommerce API Error (Update Order):", error.response?.data || error.message);
-      res.status(500).json({ error: "Failed to update order", details: error.response?.data });
+      console.error(`❌ WooCommerce API Error (Update Order ${req.params.id}):`, JSON.stringify(error.response?.data, null, 2) || error.message);
+      res.status(500).json({ 
+        error: "Failed to update order", 
+        message: error.response?.data?.message || error.message,
+        details: error.response?.data 
+      });
     }
   });
 
@@ -511,6 +612,10 @@ async function startServer() {
         phone = '966' + phone;
       }
 
+      const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+      const host = req.headers.host;
+      const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
+
       const tamaraData = {
         order_reference_id: orderId.toString(),
         total_amount: {
@@ -574,7 +679,7 @@ async function startServer() {
           success: returnUrl,
           failure: cancelUrl,
           cancel: cancelUrl,
-          notification: `${(process.env.APP_URL || "").replace(/\/$/, "")}/api/payment/tamara/webhook`
+          notification: `${baseUrl}/api/payment/tamara/webhook`
         }
       };
 
@@ -655,6 +760,10 @@ async function startServer() {
         phone = '+966' + phone;
       }
 
+      const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+      const host = req.headers.host;
+      const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
+
       const tabbyData = {
         payment: {
           amount: parseFloat(amount).toFixed(2),
@@ -693,6 +802,7 @@ async function startServer() {
           }
         },
         lang: "ar",
+        webhook_url: `${baseUrl}/api/payment/tabby/webhook`,
         merchant_urls: {
           success: returnUrl,
           cancel: cancelUrl,

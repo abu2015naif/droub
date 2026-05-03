@@ -123,6 +123,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [editingType, setEditingType] = useState('simple');
   const [loading, setLoading] = useState(false);
+  const [productImageFile, setProductImageFile] = useState<File | null>(null);
   const [homeSettings, setHomeSettings] = useState<{ productsPerPage: number }>({ productsPerPage: 8 });
 
   const fetchHomeSettings = async () => {
@@ -639,27 +640,106 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const formData = new FormData(e.target as HTMLFormElement);
     
+    // Capture form values immediately before any async operations
+    const form = e.currentTarget as HTMLFormElement;
+    const formData = new FormData(form);
+    
+    // Improved data extraction with fallbacks from form elements
+    const getVal = (name: string) => {
+      const val = formData.get(name);
+      if (val !== null) return val as string;
+      // Fallback to elements if FormData fails for some reason
+      const el = form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      return el ? el.value : "";
+    };
+
+    const capturedData = {
+      name: getVal('name') || "",
+      price: getVal('price') || "",
+      sale_price: getVal('sale_price') || "",
+      description: getVal('description') || "",
+      stock_status: getVal('stock_status') || "instock",
+      manage_stock: formData.get('manage_stock') === 'on' || (form.elements.namedItem('manage_stock') as HTMLInputElement)?.checked,
+      stock_quantity: getVal('stock_quantity') ? parseInt(getVal('stock_quantity')) : undefined,
+      type: getVal('type') || 'simple',
+      category: getVal('category'),
+      image_url: getVal('image_url'),
+      grouped_products: getVal('grouped_products'),
+      external_url: getVal('external_url'),
+      button_text: getVal('button_text'),
+    };
+
+    console.log("📝 Captured Form Data:", JSON.stringify(capturedData, null, 2));
+
+    // Basic Validation
+    if (!capturedData.name.toString().trim()) {
+      alert("يرجى إدخال اسم المنتج");
+      setLoading(false);
+      return;
+    }
+
+    let imageUrl = capturedData.image_url;
+    let imageId = null;
+
+    // If a file is selected, upload it first
+    if (productImageFile) {
+      try {
+        console.log("📡 Attempting to upload image file...");
+        const uploadFormData = new FormData();
+        uploadFormData.append('file', productImageFile);
+        
+        const uploadRes = await fetch('/api/media', {
+          method: 'POST',
+          body: uploadFormData
+        });
+        
+        if (uploadRes.ok) {
+          const media = await uploadRes.json();
+          console.log("✅ Image uploaded to WordPress:", media.id);
+          imageUrl = media.source_url;
+          imageId = media.id;
+        } else {
+          const err = await uploadRes.json();
+          throw new Error("فشل رفع الصورة لووردبريس: " + (err.details?.message || err.error || JSON.stringify(err)));
+        }
+      } catch (error: any) {
+        console.error("❌ Image upload failed:", error);
+        alert(error.message);
+        setLoading(false);
+        return;
+      }
+    }
+
+    const categoryId = parseInt(capturedData.category);
     const productData: any = {
-      name: formData.get('name') as string,
-      regular_price: formData.get('price') as string,
-      sale_price: formData.get('sale_price') as string,
-      description: formData.get('description') as string,
-      stock_status: formData.get('stock_status') as string,
-      manage_stock: formData.get('manage_stock') === 'on',
-      stock_quantity: formData.get('stock_quantity') ? parseInt(formData.get('stock_quantity') as string) : undefined,
-      type: formData.get('type') as string,
-      categories: [{ id: parseInt(formData.get('category') as string) }],
-      images: formData.get('image_url') 
-        ? [{ src: formData.get('image_url') as string }] 
-        : (isEditingProduct?.images || [{ src: "https://picsum.photos/seed/safety/400" }]),
+      name: String(capturedData.name || "").trim(),
+      regular_price: String(capturedData.price || "").trim(),
+      sale_price: capturedData.sale_price ? String(capturedData.sale_price).trim() : "",
+      description: capturedData.description || "",
+      short_description: capturedData.description ? capturedData.description.substring(0, 160) : "",
+      stock_status: capturedData.stock_status || "instock",
+      manage_stock: !!capturedData.manage_stock,
+      stock_quantity: (capturedData.manage_stock && capturedData.stock_quantity !== undefined) ? capturedData.stock_quantity : null,
+      type: capturedData.type || "simple",
+      categories: !isNaN(categoryId) ? [{ id: categoryId }] : [],
       status: "publish"
     };
 
+    // Robust image handling
+    if (imageId) {
+      productData.images = [{ id: imageId }];
+    } else if (imageUrl && imageUrl.startsWith('http')) {
+      productData.images = [{ src: imageUrl }];
+    } else if (isEditingProduct?.images && isEditingProduct.images.length > 0) {
+      productData.images = isEditingProduct.images;
+    } else {
+      productData.images = [{ src: "https://api.droubalsalamah.com/wp-content/uploads/woocommerce-placeholder.png" }];
+    }
+
     // Handle specific types
     if (productData.type === 'grouped') {
-      const groupedIds = (formData.get('grouped_products') as string)
+      const groupedIds = (capturedData.grouped_products || "")
         .split(',')
         .map(id => parseInt(id.trim()))
         .filter(id => !isNaN(id));
@@ -667,9 +747,11 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     }
 
     if (productData.type === 'external') {
-      productData.external_url = formData.get('external_url') as string;
-      productData.button_text = formData.get('button_text') as string;
+      productData.external_url = capturedData.external_url;
+      productData.button_text = capturedData.button_text;
     }
+
+    console.log("🚀 Sending Product Data to API:", productData);
 
     try {
       let response;
@@ -691,6 +773,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
         await fetchProducts();
         setIsAddingProduct(false);
         setIsEditingProduct(null);
+        setProductImageFile(null);
       } else {
         const err = await response.json();
         alert("خطأ في حفظ المنتج: " + (err.details?.message || err.error));
@@ -704,17 +787,27 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   };
 
   const deleteProduct = async (id: string) => {
-    if (window.confirm("هل أنت متأكد من حذف هذا المنتج من ووكومرس؟")) {
-      try {
-        const response = await fetch(`/api/products/${id}`, { method: 'DELETE' });
-        if (response.ok) {
-          await fetchProducts();
-        } else {
-          alert("فشل حذف المنتج");
-        }
-      } catch (error) {
-        console.error("Error deleting product:", error);
+    if (!window.confirm("هل أنت متأكد من حذف هذا المنتج نهائياً من ووكومرس؟")) return;
+    
+    setLoading(true);
+    try {
+      console.log(`📡 Sending delete request for product ${id}...`);
+      const response = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      
+      if (response.ok) {
+        console.log(`✅ Product ${id} deleted successfully`);
+        alert("تم حذف المنتج بنجاح");
+        await fetchProducts();
+      } else {
+        const err = await response.json();
+        console.error(`❌ Failed to delete product ${id}:`, err);
+        alert("فشل حذف المنتج: " + (err.details?.message || err.error || "خطأ غير معروف"));
       }
+    } catch (error) {
+      console.error("❌ Error deleting product:", error);
+      alert("حدث خطأ أثناء الاتصال بالخادم");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -2305,7 +2398,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
               className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl relative"
             >
               <button 
-                onClick={() => { setIsAddingProduct(false); setIsEditingProduct(null); }}
+                onClick={() => { setIsAddingProduct(false); setIsEditingProduct(null); setProductImageFile(null); }}
                 className="absolute top-6 left-6 p-2 hover:bg-gray-100 rounded-full transition-colors"
               >
                 <X size={24} />
@@ -2329,8 +2422,47 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-gray-600">رابط صورة المنتج</label>
-                  <input name="image_url" defaultValue={isEditingProduct?.images?.[0]?.src} placeholder="https://example.com/image.jpg" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500 outline-none" />
+                  <label className="text-sm font-bold text-gray-600">صورة المنتج</label>
+                  <div className="flex flex-col gap-3">
+                    {/* File Upload Option */}
+                    <div className="flex items-center gap-4">
+                      <label className="flex-1 cursor-pointer">
+                        <div className={`w-full border-2 border-dashed rounded-xl px-4 py-6 flex flex-col items-center justify-center gap-2 transition-all ${productImageFile ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-gray-50 hover:border-red-500'}`}>
+                          <ImageIcon className={productImageFile ? 'text-green-500' : 'text-gray-400'} size={32} />
+                          <span className={`text-sm font-bold ${productImageFile ? 'text-green-700' : 'text-gray-500'}`}>
+                            {productImageFile ? productImageFile.name : 'اسحب صورة المنتج هنا أو انقر للرفع'}
+                          </span>
+                        </div>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => setProductImageFile(e.target.files?.[0] || null)}
+                        />
+                      </label>
+                      {productImageFile && (
+                        <button 
+                          type="button" 
+                          onClick={() => setProductImageFile(null)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <X size={20} />
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="relative">
+                       <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-gray-100"></span></div>
+                       <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-gray-400 font-bold">أو استخدم رابطاً مباشراً</span></div>
+                    </div>
+
+                    <input 
+                      name="image_url" 
+                      defaultValue={isEditingProduct?.images?.[0]?.src} 
+                      placeholder="https://example.com/image.jpg" 
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500 outline-none" 
+                    />
+                  </div>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
