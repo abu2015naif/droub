@@ -668,16 +668,21 @@ export default function App() {
   const finalizeOrder = async (shippingDetails: any, selectedShipping: any, paymentMethod: string = "cod", extraData?: any) => {
     setCheckoutLoading(true);
     let currentUser = user;
+    let usedEmail = user?.email || shippingDetails.email;
 
     try {
       // 1. Automatic Registration if not logged in
-      if (!currentUser) {
+      if (!currentUser && shippingDetails.email) {
         try {
           // Generate a random password for the new user
           const tempPassword = Math.random().toString(36).slice(-10) + "Aa1!";
           const userCredential = await createUserWithEmailAndPassword(auth, shippingDetails.email, tempPassword);
           currentUser = userCredential.user;
           
+          await updateProfile(userCredential.user, { 
+            displayName: `${shippingDetails.firstName || ""} ${shippingDetails.lastName || ""}`.trim() || "عميل"
+          });
+
           // Send password reset email so they can set their own password
           await sendPasswordResetEmail(auth, shippingDetails.email);
           console.log("Auto-registered user and sent reset email");
@@ -685,9 +690,8 @@ export default function App() {
           // If user already exists, we proceed as guest or inform them
           if (authError.code === 'auth/email-already-in-use') {
             console.log("User already exists, proceeding with order linked to email");
-            // We can't log them in without password, but we can still create the WC order
           } else {
-            throw authError;
+            console.error("Auth error in auto-reg:", authError);
           }
         }
       }
@@ -905,7 +909,8 @@ export default function App() {
         const fsOrderData = {
           userId: currentUser?.uid || "guest",
           customerName: `${shippingDetails.firstName || ""} ${shippingDetails.lastName || ""}`.trim() || "عميل",
-          customerEmail: currentUser?.email || shippingDetails.email || "",
+          customerEmail: usedEmail || "",
+          customerPhone: shippingDetails.phone || "",
           items: cart.map(item => ({
             id: item.id || 0,
             name: item.name || "",
@@ -917,7 +922,11 @@ export default function App() {
           total: parseFloat(wcOrder.total || totalAmount.toString()) || totalAmount,
           status: 'pending',
           wcOrderId: wcOrder.id || 0,
-          billing: JSON.parse(JSON.stringify(wcOrderData.billing)),
+          billing: {
+            ...wcOrderData.billing,
+            email: usedEmail || wcOrderData.billing.email,
+            phone: shippingDetails.phone || wcOrderData.billing.phone
+          },
           payment_method: paymentMethod,
           payment_method_title: wcOrderData.payment_method_title,
           isCompany: extraData?.isCompany || false,
@@ -2516,7 +2525,7 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
                       {order.items.map((item: any, idx: number) => (
                         <div key={`${order.id}-${item.id}-${idx}`} className="flex items-center gap-4">
                           <div className="w-12 h-12 bg-gray-50 rounded-lg overflow-hidden shrink-0 border border-gray-100">
-                            <img src={item.images?.[0]?.src} className="w-full h-full object-cover" alt={item.name} referrerPolicy="no-referrer" />
+                            <img src={item.image || item.images?.[0]?.src} className="w-full h-full object-cover" alt={item.name} referrerPolicy="no-referrer" />
                           </div>
                           <div className="flex-1">
                             <p className="text-sm font-bold line-clamp-1">{item.name}</p>

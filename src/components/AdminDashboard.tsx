@@ -34,6 +34,7 @@ interface Order {
   wcOrderId?: number;
   customerName: string;
   customerEmail?: string;
+  customerPhone?: string;
   items: any[];
   total: string | number;
   status: 'pending' | 'processing' | 'completed' | 'cancelled' | 'on-hold' | 'refunded' | 'failed';
@@ -424,16 +425,18 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
           
           return {
             id: o.id.toString(),
-            customerName: `${o.billing.first_name || ""} ${o.billing.last_name || ""}`.trim() || o.billing.email || "عميل",
-            customerEmail: o.billing.email,
+            customerName: `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || o.billing?.email || "عميل",
+            customerEmail: o.billing?.email || "",
+            customerPhone: o.billing?.phone || "",
             total: o.total,
             status: o.status,
             createdAt: o.date_created,
-            billing: o.billing,
+            billing: o.billing || {},
             payment_method: o.payment_method,
             payment_method_title: o.payment_method_title,
             customer_note: o.customer_note,
-            items: o.line_items.map((li: any) => ({
+            wcOrderId: o.id,
+            items: o.line_items?.map((li: any) => ({
               id: li.product_id,
               name: li.name,
               quantity: li.quantity,
@@ -458,8 +461,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
               holderName: getMeta("_bank_transfer_holder"),
               receiptUrl: getMeta("_bank_receipt_url") || getMeta("_bank_receipt_base64"),
               bankAccount: getMeta("_bank_account_details") ? JSON.parse(getMeta("_bank_account_details")) : undefined
-            } : undefined,
-            wcOrderId: o.id
+            } : undefined
           };
         });
         
@@ -497,7 +499,9 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
         return {
           id: docSnap.id,
           ...data,
-          customerName: data.customerName || "عميل",
+          customerName: data.customerName || (data.billing?.first_name ? `${data.billing.first_name} ${data.billing.last_name || ""}`.trim() : "عميل"),
+          customerEmail: data.customerEmail || data.billing?.email || "",
+          customerPhone: data.customerPhone || data.billing?.phone || "",
           items: data.items || [],
           total: data.total || 0,
           status: data.status || 'pending',
@@ -2219,15 +2223,15 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                   <div className="bg-gray-50 p-4 rounded-2xl space-y-2">
                     <p className="font-bold text-lg">{selectedOrder.customerName}</p>
                     <p className="text-sm text-gray-600 flex items-center gap-2">
-                      <span className="font-bold">البريد:</span> {selectedOrder.customerEmail || 'غير متوفر'}
+                      <span className="font-bold">البريد:</span> {selectedOrder.customerEmail || selectedOrder.billing?.email || 'غير متوفر'}
                     </p>
                     <p className="text-sm text-gray-600 flex items-center gap-2">
-                      <span className="font-bold">الهاتف:</span> {selectedOrder.billing?.phone || 'غير متوفر'}
+                      <span className="font-bold">الهاتف:</span> {selectedOrder.customerPhone || selectedOrder.billing?.phone || 'غير متوفر'}
                     </p>
                     <div className="text-sm text-gray-600 pt-2 border-t border-gray-200 mt-2">
                       <p className="font-bold mb-1">العنوان:</p>
-                      <p>{selectedOrder.billing?.address_1}</p>
-                      <p>{selectedOrder.billing?.city}, {selectedOrder.billing?.state} {selectedOrder.billing?.postcode}</p>
+                      <p>{selectedOrder.billing?.address_1 || (selectedOrder as any).shippingAddress || 'غير متوفر'}</p>
+                      {selectedOrder.billing?.city && <p>{selectedOrder.billing?.city}, {selectedOrder.billing?.state} {selectedOrder.billing?.postcode}</p>}
                     </div>
                     <p className="text-xs text-gray-400 pt-2">{new Date(selectedOrder.createdAt).toLocaleString('ar-SA')}</p>
                   </div>
@@ -2347,8 +2351,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                   {selectedOrder.items.map((item: any, idx: number) => (
                     <div key={`${selectedOrder.id}-${item.id}-${idx}`} className="flex items-center gap-4 p-4 border border-gray-100 rounded-2xl hover:bg-gray-50 transition-colors">
                       <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
-                        {item.images?.[0]?.src ? (
-                          <img src={item.images[0].src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        {(item.image || item.images?.[0]?.src) ? (
+                          <img src={item.image || item.images[0].src} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <Package size={24} className="text-gray-300" />
                         )}
