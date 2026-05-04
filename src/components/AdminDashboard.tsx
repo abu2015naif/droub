@@ -467,10 +467,30 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
         
         setOrders(prev => {
           // Merge with previous orders (which might be from Firestore)
-          // Prefer WC data if IDs match as it's official
+          // Prefer WC data if IDs match as it's official, but keep rich metadata from FS
           const merged = [...mappedOrders];
           prev.forEach(p => {
-            if (!merged.find(m => m.id === p.id || (m.wcOrderId && m.wcOrderId === p.wcOrderId))) {
+            // Check if this previous order (likely from FS) should be merged
+            const index = merged.findIndex(m => 
+              m.id === p.id || 
+              (m.wcOrderId && p.wcOrderId && m.wcOrderId !== 0 && m.wcOrderId === p.wcOrderId) ||
+              (m.wcOrderId && p.id === m.wcOrderId.toString() && m.wcOrderId !== 0) ||
+              (p.wcOrderId && m.id === p.wcOrderId.toString() && p.wcOrderId !== 0)
+            );
+            
+            if (index !== -1) {
+              // Duplicate found: Merge them but keep the "best" data
+              const wcOrder = merged[index];
+              merged[index] = {
+                ...p, // Start with previous (often FS)
+                ...wcOrder, // Layer WC over it
+                // Prefer rich customer info from either side
+                customerName: (wcOrder.customerName === "عميل" && p.customerName !== "عميل") ? p.customerName : wcOrder.customerName,
+                total: ((wcOrder.total === 0 || wcOrder.total === "0") && p.total !== 0 && p.total !== "0") ? p.total : wcOrder.total,
+                items: (wcOrder.items && wcOrder.items.length > 0) ? wcOrder.items : (p.items || []),
+                billing: (Object.keys(wcOrder.billing || {}).length <= 2 && p.billing && Object.keys(p.billing).length > 2) ? p.billing : (wcOrder.billing || p.billing)
+              };
+            } else {
               merged.push(p);
             }
           });
@@ -512,10 +532,28 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       setOrders(prev => {
         const merged = [...prev];
         fsOrders.forEach(fsOrder => {
-          const index = merged.findIndex(o => o.id === fsOrder.id || (fsOrder.wcOrderId && o.id === fsOrder.wcOrderId.toString()));
+          const index = merged.findIndex(o => 
+            o.id === fsOrder.id || 
+            (fsOrder.wcOrderId && fsOrder.wcOrderId !== 0 && o.id === fsOrder.wcOrderId.toString()) ||
+            (fsOrder.wcOrderId && fsOrder.wcOrderId !== 0 && o.wcOrderId === fsOrder.wcOrderId)
+          );
           if (index !== -1) {
             // Update existing with firestore data (often has more local metadata)
-            merged[index] = { ...merged[index], ...fsOrder };
+            // But be careful NOT to overwrite rich data with sparse data
+            const existing = merged[index];
+            merged[index] = { 
+              ...existing, 
+              ...fsOrder,
+              // Only overwrite if new data is meaningful, otherwise keep existing
+              customerName: (fsOrder.customerName === "عميل" && existing.customerName && existing.customerName !== "عميل") 
+                ? existing.customerName : fsOrder.customerName,
+              total: ((fsOrder.total === 0 || fsOrder.total === "0") && existing.total && existing.total !== 0 && existing.total !== "0")
+                ? existing.total : fsOrder.total,
+              items: (fsOrder.items.length === 0 && existing.items && existing.items.length > 0)
+                ? existing.items : fsOrder.items,
+              billing: (Object.keys(fsOrder.billing || {}).length <= 2 && existing.billing && Object.keys(existing.billing).length > 2)
+                ? existing.billing : (fsOrder.billing || existing.billing)
+            };
           } else {
             merged.push(fsOrder);
           }
