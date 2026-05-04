@@ -705,7 +705,7 @@ export default function App() {
                              paymentMethod.toLowerCase().includes("tamara") ? "تمارا (Tamara)" :
                              paymentMethod.toLowerCase().includes("tabby") ? "تابي (Tabby)" :
                              "بطاقة مدى / فيزا / ماستر كارد",
-        status: "pending",
+        status: (paymentMethod === "cod" || paymentMethod === "bank_transfer") ? "on-hold" : "pending",
         set_paid: false,
         customer_note: extraData?.isCompany ? `طلب لشركة: ${extraData.companyInfo?.name || ""} - ضريبي: ${extraData.companyInfo?.taxNumber || ""} - سجل: ${extraData.companyInfo?.commercialRegister || ""}` : "",
         billing: {
@@ -758,11 +758,50 @@ export default function App() {
       // If bank transfer, we might want to upload the receipt first
       if (paymentMethod === "bank_transfer" && extraData?.bankTransferInfo?.receiptUrl) {
         try {
+          console.log("📡 Preparing bank receipt for upload...");
+          
+          let uploadData = extraData.bankTransferInfo.receiptUrl;
+
+          // 🏗️ Simple client-side compression using Canvas if it's a large image
+          if (uploadData.length > 400000) { // > 400KB
+            try {
+              console.log("🪄 Compressing large receipt image...");
+              const img = new Image();
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              
+              await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = uploadData;
+              });
+
+              let width = img.width;
+              let height = img.height;
+              const maxDim = 1000; // Smaller max dimension
+              if (width > maxDim || height > maxDim) {
+                if (width > height) {
+                  height *= maxDim / width;
+                  width = maxDim;
+                } else {
+                  width *= maxDim / height;
+                  height = maxDim;
+                }
+              }
+
+              canvas.width = width;
+              canvas.height = height;
+              ctx?.drawImage(img, 0, 0, width, height);
+              uploadData = canvas.toDataURL('image/jpeg', 0.6); // 60% quality
+              console.log(`✅ Compressed from ${Math.round(extraData.bankTransferInfo.receiptUrl.length/1024)}KB to ${Math.round(uploadData.length/1024)}KB`);
+            } catch (compressErr) {
+              console.warn("⚠️ Compression failed, sending original:", compressErr);
+            }
+          }
+
           console.log("📡 Uploading bank receipt to media library...");
-          // Convert base64 to blob/file for upload
-          const base64Data = extraData.bankTransferInfo.receiptUrl.split(',')[1];
-          const blob = await (await fetch(extraData.bankTransferInfo.receiptUrl)).blob();
-          const file = new File([blob], `receipt-${Date.now()}.png`, { type: blob.type });
+          const blob = await (await fetch(uploadData)).blob();
+          const file = new File([blob], `receipt-${Date.now()}.jpg`, { type: 'image/jpeg' });
           
           const uploadFormData = new FormData();
           uploadFormData.append('file', file);
@@ -773,13 +812,31 @@ export default function App() {
           });
           
           if (uploadRes.ok) {
-            const media = await uploadRes.json();
+            let media;
+            try {
+              const textRes = await uploadRes.text();
+              media = JSON.parse(textRes);
+            } catch (pErr) {
+              console.error("❌ Failed to parse media upload JSON:", pErr);
+              throw new Error("تلقى التطبيق استجابة غير صالحة من السيرفر. قد يكون هناك جدار حماية يمنع الرفع.");
+            }
             wcOrderData.meta_data.push({ key: "_bank_receipt_url", value: media.source_url });
             wcOrderData.meta_data.push({ key: "_bank_receipt_id", value: media.id.toString() });
             console.log("✅ Bank receipt uploaded successfully:", media.source_url);
           } else {
             const errorText = await uploadRes.text();
             console.error("❌ Media upload failed (text response):", errorText);
+            
+            let errorJson = null;
+            try {
+              errorJson = JSON.parse(errorText);
+            } catch (e) {
+              // Not JSON
+            }
+
+            if (errorJson?.is_html) {
+              throw new Error(`خطأ في السيرفر (403): جدار الحماية يمنع رفع الصور. يرجى التواصل مع الإدارة.`);
+            }
             throw new Error(`Media upload failed: ${uploadRes.status}`);
           }
         } catch (uploadErr) {
@@ -801,26 +858,30 @@ export default function App() {
         body: JSON.stringify(wcOrderData)
       });
 
+      const wcResText = await wcResponse.text();
       if (!wcResponse.ok) {
         let errorData;
         try {
-          errorData = await wcResponse.json();
+          errorData = JSON.parse(wcResText);
         } catch (e) {
-          const textErr = await wcResponse.text();
-          console.error("❌ Failed to parse error JSON. Text error:", textErr);
-          throw new Error(`Server error (${wcResponse.status}): ${textErr.substring(0, 100)}...`);
+          console.error("❌ Failed to parse error JSON. Text error:", wcResText);
+          throw new Error(`Server error (${wcResponse.status}): ${wcResText.substring(0, 100)}...`);
         }
         console.error("❌ WooCommerce Order Creation Failed:", errorData);
         throw new Error(errorData.message || errorData.error || "Failed to sync with WooCommerce");
       }
 
-      const wcOrder = await wcResponse.json();
+      let wcOrder;
+      try {
+        wcOrder = JSON.parse(wcResText);
+      } catch (e) {
+        console.error("❌ Failed to parse success order JSON:", e, wcResText);
+        throw new Error("سجل السيرفر الطلب ولكن الرد كان غير متوقع.");
+      }
       console.log("✅ WooCommerce Order Created:", wcOrder);
 
       // 2. Also save to Firestore for local tracking
       try {
-        console.log("🔥 Saving order to Firestore for local tracking...");
-        
         // Prepare a safe version of bankTransferInfo for Firestore (remove base64)
         let safeBankInfo = null;
         if (extraData?.bankTransferInfo) {
@@ -839,7 +900,9 @@ export default function App() {
           }
         }
 
-        await addDoc(collection(db, "orders"), {
+        console.log(`🔥 Saving order to Firestore for user: ${currentUser?.uid || "guest"}...`);
+        
+        const fsOrderData = {
           userId: currentUser?.uid || "guest",
           customerName: `${shippingDetails.firstName || ""} ${shippingDetails.lastName || ""}`.trim() || "عميل",
           customerEmail: currentUser?.email || shippingDetails.email || "",
@@ -862,8 +925,10 @@ export default function App() {
           pickupShowroom: extraData?.pickupShowroom ? JSON.parse(JSON.stringify(extraData.pickupShowroom)) : null,
           bankTransferInfo: safeBankInfo,
           createdAt: new Date().toISOString()
-        });
-        console.log("✅ Order saved to Firestore.");
+        };
+
+        const docRef = await addDoc(collection(db, "orders"), fsOrderData);
+        console.log(`✅ Order saved to Firestore with ID: ${docRef.id} for UID: ${fsOrderData.userId}`);
       } catch (fsError) {
         console.error("⚠️ Firestore Order Save Error (non-blocking):", fsError);
         // Continue even if Firestore fails to save, as WooCommerce order is already created
@@ -1045,7 +1110,8 @@ export default function App() {
 
       // 4. Handle standard WooCommerce payment redirects (FALLBACK ONLY)
       // This is a fallback if custom integrations above weren't triggered
-      if (wcOrder.payment_url || wcOrder.checkout_payment_url) {
+      // We skip this for COD and Bank Transfer to avoid redirecting to the WP payment page unnecessarily
+      if ((paymentMethod !== "cod" && paymentMethod !== "bank_transfer") && (wcOrder.payment_url || wcOrder.checkout_payment_url)) {
         const redirectUrl = wcOrder.payment_url || wcOrder.checkout_payment_url;
         console.log("🚀 Redirecting to WooCommerce fallback payment URL:", redirectUrl);
         window.location.href = redirectUrl;
@@ -1053,10 +1119,10 @@ export default function App() {
       }
 
       setCart([]);
-      setActiveTab("home");
+      setActiveTab("profile");
       const successMsg = !user ? 
-        `تم استلام طلبك بنجاح! رقم الطلب: #${wcOrder.id}. لقد تم إنشاء حساب لك وإرسال رابط تعيين كلمة المرور لبريدك الإلكتروني.` :
-        `تم استلام طلبك بنجاح! رقم الطلب: #${wcOrder.id}`;
+        `تم استلام طلبك بنجاح! رقم الطلب: #${wcOrder.id}. لقد تم إنشاء حساب لك وإرسال رابط تعيين كلمة المرور لبريدك الإلكتروني. يمكنك رؤية طلبك في قسم "حسابي".` :
+        `تم استلام طلبك بنجاح! رقم الطلب: #${wcOrder.id}. يمكنك متابعة حالة الطلب من قسم "حسابي".`;
       alert(successMsg);
     } catch (error: any) {
       console.error("Checkout error:", error);
@@ -2313,14 +2379,21 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
       try {
         const q = query(
           collection(db, "orders"),
-          where("userId", "==", user.uid),
-          orderBy("createdAt", "desc")
+          where("userId", "==", user.uid)
         );
         const querySnapshot = await getDocs(q);
         const ordersData = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
+        
+        // Sort manually by createdAt desc to avoid requiring a composite index
+        ordersData.sort((a: any, b: any) => {
+          const dateA = new Date(a.createdAt).getTime();
+          const dateB = new Date(b.createdAt).getTime();
+          return dateB - dateA;
+        });
+        
         setOrders(ordersData);
       } catch (error) {
         console.error("Error fetching orders:", error);
@@ -2453,6 +2526,30 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
                       ))}
                     </div>
                     
+                      {/* معلومات إضافية للعميل في قائمة طلباته */}
+                      {(order.isCompany || order.pickupShowroom || order.bankTransferInfo) && (
+                        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 pt-6 border-t border-gray-50">
+                          {order.isCompany && (
+                            <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-50 text-[11px]">
+                              <p className="font-bold text-blue-800 mb-1 flex items-center gap-1"><Building2 size={12} /> طلب شركة</p>
+                              <p className="text-blue-700">{order.companyInfo?.name}</p>
+                              <p className="text-blue-600/70">الرقم الضريبي: {order.companyInfo?.taxNumber}</p>
+                            </div>
+                          )}
+                          {order.pickupShowroom ? (
+                            <div className="bg-green-50/50 p-3 rounded-xl border border-green-50 text-[11px]">
+                              <p className="font-bold text-green-800 mb-1 flex items-center gap-1"><MapPin size={12} /> استلام من المعرض</p>
+                              <p className="text-green-700">{order.pickupShowroom.name}</p>
+                            </div>
+                          ) : (
+                            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-[11px]">
+                              <p className="font-bold text-gray-600 mb-1 flex items-center gap-1"><Truck size={12} /> طريقة الاستلام</p>
+                              <p className="text-gray-500">توصيل للعنوان المسجل</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                     <div className="mt-6 pt-6 border-t border-gray-50 flex justify-between items-center">
                       <div className="text-xs text-gray-400">
                         <p>طريقة الدفع: {order.payment_method === 'cod' ? 'الدفع عند الاستلام' : 'دفع إلكتروني'}</p>

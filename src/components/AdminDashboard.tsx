@@ -31,6 +31,7 @@ import { Product, Showroom, BankDetails, Employee } from "../types";
 interface Order {
   id: string;
   userId?: string;
+  wcOrderId?: number;
   customerName: string;
   customerEmail?: string;
   items: any[];
@@ -415,7 +416,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch("/api/orders?per_page=50");
+      const response = await fetch(`/api/orders?per_page=100&status=any&t=${Date.now()}`);
       const data = await response.json();
       if (Array.isArray(data)) {
         const mappedOrders: Order[] = data.map(o => {
@@ -423,7 +424,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
           
           return {
             id: o.id.toString(),
-            customerName: `${o.billing.first_name} ${o.billing.last_name}`,
+            customerName: `${o.billing.first_name || ""} ${o.billing.last_name || ""}`.trim() || o.billing.email || "عميل",
             customerEmail: o.billing.email,
             total: o.total,
             status: o.status,
@@ -457,14 +458,22 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
               holderName: getMeta("_bank_transfer_holder"),
               receiptUrl: getMeta("_bank_receipt_url") || getMeta("_bank_receipt_base64"),
               bankAccount: getMeta("_bank_account_details") ? JSON.parse(getMeta("_bank_account_details")) : undefined
-            } : undefined
+            } : undefined,
+            wcOrderId: o.id
           };
         });
-        // Deduplicate orders to avoid key collisions
-        const uniqueOrders = mappedOrders.filter((o, index, self) => 
-          index === self.findIndex((t) => t.id === o.id)
-        );
-        setOrders(uniqueOrders);
+        
+        setOrders(prev => {
+          // Merge with previous orders (which might be from Firestore)
+          // Prefer WC data if IDs match as it's official
+          const merged = [...mappedOrders];
+          prev.forEach(p => {
+            if (!merged.find(m => m.id === p.id || (m.wcOrderId && m.wcOrderId === p.wcOrderId))) {
+              merged.push(p);
+            }
+          });
+          return merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        });
       }
     } catch (error) {
       console.error("Error fetching orders:", error);
@@ -479,6 +488,39 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     fetchShippingZones();
     fetchHomeSettings();
     fetchPaymentGateways();
+
+    // Listen to orders from Firestore for real-time updates
+    const ordersRef = collection(db, "orders");
+    const unsubOrders = onSnapshot(ordersRef, (snapshot) => {
+      const fsOrders = snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          customerName: data.customerName || "عميل",
+          items: data.items || [],
+          total: data.total || 0,
+          status: data.status || 'pending',
+          createdAt: data.createdAt || new Date().toISOString()
+        } as Order;
+      });
+      
+      setOrders(prev => {
+        const merged = [...prev];
+        fsOrders.forEach(fsOrder => {
+          const index = merged.findIndex(o => o.id === fsOrder.id || (fsOrder.wcOrderId && o.id === fsOrder.wcOrderId.toString()));
+          if (index !== -1) {
+            // Update existing with firestore data (often has more local metadata)
+            merged[index] = { ...merged[index], ...fsOrder };
+          } else {
+            merged.push(fsOrder);
+          }
+        });
+        return merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      });
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, "orders");
+    });
 
     // Listen to employees (users with roles)
     const usersRef = collection(db, "users");
@@ -730,17 +772,24 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
         });
         
         if (uploadRes.ok) {
-          const media = await uploadRes.json();
-          console.log("✅ Image uploaded to WordPress:", media.id);
-          imageUrl = media.source_url;
-          imageId = media.id;
+          const textRes = await uploadRes.text();
+          let media;
+          try {
+            media = JSON.parse(textRes);
+            console.log("✅ Image uploaded to WordPress:", media.id);
+            imageUrl = media.source_url;
+            imageId = media.id;
+          } catch (e) {
+            console.error("❌ Failed to parse success media JSON:", e, textRes);
+            throw new Error("تم رفع الصورة ولكن رد السيرفر غير مفهوم.");
+          }
         } else {
+          const textErr = await uploadRes.text();
           let errDetail;
           try {
-            errDetail = await uploadRes.json();
+            errDetail = JSON.parse(textErr);
           } catch (e) {
-            const text = await uploadRes.text();
-            throw new Error(`فشل رفع الصورة (خطأ ${uploadRes.status}): ${text.substring(0, 100)}`);
+            throw new Error(`فشل رفع الصورة (خطأ ${uploadRes.status}): ${textErr.substring(0, 100)}`);
           }
           throw new Error("فشل رفع الصورة لووردبريس: " + (errDetail.details?.message || errDetail.error || JSON.stringify(errDetail)));
         }
@@ -2237,6 +2286,58 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                 <div className="mb-8 p-4 bg-yellow-50 rounded-2xl border border-yellow-100">
                   <h4 className="font-bold text-yellow-800 text-xs uppercase tracking-wider mb-2">ملاحظات العميل</h4>
                   <p className="text-sm text-yellow-900">{selectedOrder.customer_note}</p>
+                </div>
+              )}
+
+              {/* معلومات إضافية (شركة، استلام، حوالة) */}
+              {(selectedOrder.isCompany || selectedOrder.pickupShowroom || selectedOrder.bankTransferInfo) && (
+                <div className="mb-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {selectedOrder.isCompany && (
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                      <h4 className="font-bold text-blue-800 text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <Building2 size={12} /> بيانات الشركة
+                      </h4>
+                      <p className="text-sm font-bold text-blue-900">{selectedOrder.companyInfo?.name}</p>
+                      <p className="text-xs text-blue-700">الرقم الضريبي: {selectedOrder.companyInfo?.taxNumber}</p>
+                      <p className="text-xs text-blue-700 font-mono">السجل: {selectedOrder.companyInfo?.commercialRegister}</p>
+                    </div>
+                  )}
+                  {selectedOrder.pickupShowroom ? (
+                    <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
+                      <h4 className="font-bold text-green-800 text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <MapPin size={12} /> استلام من المعرض
+                      </h4>
+                      <p className="text-sm font-bold text-green-900">{selectedOrder.pickupShowroom.name}</p>
+                      <p className="text-xs text-green-700">{selectedOrder.pickupShowroom.city}</p>
+                      <p className="text-[10px] text-green-600 mt-1 italic">سيتم الاستلام من فرع {selectedOrder.pickupShowroom.name}</p>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200">
+                      <h4 className="font-bold text-gray-500 text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <Truck size={12} /> نوع الطلب
+                      </h4>
+                      <p className="text-sm font-bold text-gray-700">توصيل للمنزل</p>
+                      <p className="text-xs text-gray-500">{selectedOrder.billing?.city}, {selectedOrder.billing?.address_1}</p>
+                    </div>
+                  )}
+                  {selectedOrder.bankTransferInfo && (
+                    <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
+                      <h4 className="font-bold text-orange-800 text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <CreditCard size={12} /> بيانات الحوالة
+                      </h4>
+                      <p className="text-sm font-bold text-orange-900">{selectedOrder.bankTransferInfo.holderName}</p>
+                      {selectedOrder.bankTransferInfo.receiptUrl && (
+                        <a 
+                          href={selectedOrder.bankTransferInfo.receiptUrl} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="mt-2 inline-flex items-center gap-1 text-[10px] bg-white text-orange-700 px-3 py-1.5 rounded-lg border border-orange-200 font-bold hover:bg-orange-100 transition-colors"
+                        >
+                          <ImageIcon size={10} /> عرض إيصال التحويل
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
