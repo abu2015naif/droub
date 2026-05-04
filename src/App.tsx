@@ -697,7 +697,7 @@ export default function App() {
       console.log("💰 Order Total Calculation:", { cartTotal, shippingCost, totalAmount });
 
       // 1. Create order in WooCommerce via our backend
-      const wcOrderData = {
+      const wcOrderData: any = {
         payment_method: paymentMethod,
         payment_method_title: paymentMethod === "cod" ? "الدفع عند الاستلام" : 
                              paymentMethod === "bank_transfer" ? "حوالة بنكية" :
@@ -742,8 +742,56 @@ export default function App() {
             method_title: selectedShipping.method_title,
             total: shippingCost.toFixed(2)
           }
-        ] : []
+        ] : [],
+        meta_data: [
+          { key: "_order_type", value: extraData?.isPickup ? "pickup" : "shipping" },
+          { key: "_pickup_showroom", value: extraData?.pickupShowroom ? JSON.stringify(extraData.pickupShowroom) : "" },
+          { key: "_is_company", value: extraData?.isCompany ? "yes" : "no" },
+          { key: "_company_name", value: extraData?.companyInfo?.name || "" },
+          { key: "_tax_number", value: extraData?.companyInfo?.taxNumber || "" },
+          { key: "_commercial_register", value: extraData?.companyInfo?.commercialRegister || "" },
+          { key: "_bank_transfer_holder", value: extraData?.bankTransferInfo?.holderName || "" },
+          { key: "_bank_account_details", value: extraData?.bankTransferInfo?.bankAccount ? JSON.stringify(extraData.bankTransferInfo.bankAccount) : "" }
+        ]
       };
+
+      // If bank transfer, we might want to upload the receipt first
+      if (paymentMethod === "bank_transfer" && extraData?.bankTransferInfo?.receiptUrl) {
+        try {
+          console.log("📡 Uploading bank receipt to media library...");
+          // Convert base64 to blob/file for upload
+          const base64Data = extraData.bankTransferInfo.receiptUrl.split(',')[1];
+          const blob = await (await fetch(extraData.bankTransferInfo.receiptUrl)).blob();
+          const file = new File([blob], `receipt-${Date.now()}.png`, { type: blob.type });
+          
+          const uploadFormData = new FormData();
+          uploadFormData.append('file', file);
+          
+          const uploadRes = await fetch('/api/media', {
+            method: 'POST',
+            body: uploadFormData
+          });
+          
+          if (uploadRes.ok) {
+            const media = await uploadRes.json();
+            wcOrderData.meta_data.push({ key: "_bank_receipt_url", value: media.source_url });
+            wcOrderData.meta_data.push({ key: "_bank_receipt_id", value: media.id.toString() });
+            console.log("✅ Bank receipt uploaded successfully:", media.source_url);
+          } else {
+            const errorText = await uploadRes.text();
+            console.error("❌ Media upload failed (text response):", errorText);
+            throw new Error(`Media upload failed: ${uploadRes.status}`);
+          }
+        } catch (uploadErr) {
+          console.error("⚠️ Failed to upload receipt:", uploadErr);
+          // Only fallback if it's not too large, but better to avoid fallback to base64 in metadata if possible
+          if (extraData.bankTransferInfo.receiptUrl.length < 500000) { // < 500KB
+            wcOrderData.meta_data.push({ key: "_bank_receipt_base64", value: extraData.bankTransferInfo.receiptUrl });
+          } else {
+            console.warn("⚠️ Receipt image too large for metadata fallback, skipping.");
+          }
+        }
+      }
 
       console.log("🚀 Prepared WC Order Data:", JSON.stringify(wcOrderData, null, 2));
 
@@ -754,9 +802,16 @@ export default function App() {
       });
 
       if (!wcResponse.ok) {
-        const errorData = await wcResponse.json();
+        let errorData;
+        try {
+          errorData = await wcResponse.json();
+        } catch (e) {
+          const textErr = await wcResponse.text();
+          console.error("❌ Failed to parse error JSON. Text error:", textErr);
+          throw new Error(`Server error (${wcResponse.status}): ${textErr.substring(0, 100)}...`);
+        }
         console.error("❌ WooCommerce Order Creation Failed:", errorData);
-        throw new Error("Failed to sync with WooCommerce");
+        throw new Error(errorData.message || errorData.error || "Failed to sync with WooCommerce");
       }
 
       const wcOrder = await wcResponse.json();
@@ -765,6 +820,25 @@ export default function App() {
       // 2. Also save to Firestore for local tracking
       try {
         console.log("🔥 Saving order to Firestore for local tracking...");
+        
+        // Prepare a safe version of bankTransferInfo for Firestore (remove base64)
+        let safeBankInfo = null;
+        if (extraData?.bankTransferInfo) {
+          safeBankInfo = { ...extraData.bankTransferInfo };
+          // If we have a WooCommerce source URL from the upload step, use it
+          // Otherwise, if it's still base64, remove it to avoid Firestore size limit
+          if (safeBankInfo.receiptUrl && safeBankInfo.receiptUrl.startsWith('data:')) {
+            // We search if we saved the uploaded URL in wcOrderData earlier
+            const uploadedUrlMeta = wcOrderData.meta_data.find((m: any) => m.key === "_bank_receipt_url");
+            if (uploadedUrlMeta) {
+              safeBankInfo.receiptUrl = uploadedUrlMeta.value;
+            } else {
+              delete safeBankInfo.receiptUrl; // Remove huge base64
+              safeBankInfo.hasReceipt = true; // Just a flag
+            }
+          }
+        }
+
         await addDoc(collection(db, "orders"), {
           userId: currentUser?.uid || "guest",
           customerName: `${shippingDetails.firstName || ""} ${shippingDetails.lastName || ""}`.trim() || "عميل",
@@ -786,7 +860,7 @@ export default function App() {
           isCompany: extraData?.isCompany || false,
           companyInfo: extraData?.companyInfo ? JSON.parse(JSON.stringify(extraData.companyInfo)) : null,
           pickupShowroom: extraData?.pickupShowroom ? JSON.parse(JSON.stringify(extraData.pickupShowroom)) : null,
-          bankTransferInfo: extraData?.bankTransferInfo ? JSON.parse(JSON.stringify(extraData.bankTransferInfo)) : null,
+          bankTransferInfo: safeBankInfo,
           createdAt: new Date().toISOString()
         });
         console.log("✅ Order saved to Firestore.");
@@ -2753,6 +2827,7 @@ function CheckoutPage({
     }
 
     const extraData = {
+      isPickup,
       isCompany,
       companyInfo: isCompany ? companyInfo : undefined,
       pickupShowroom: isPickup ? selectedShowroom : undefined,

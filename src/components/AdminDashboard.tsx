@@ -37,6 +37,9 @@ interface Order {
   total: string | number;
   status: 'pending' | 'processing' | 'completed' | 'cancelled' | 'on-hold' | 'refunded' | 'failed';
   createdAt: string;
+  payment_method?: string;
+  payment_method_title?: string;
+  customer_note?: string;
   billing?: {
     first_name: string;
     last_name: string;
@@ -49,6 +52,18 @@ interface Order {
     phone: string;
   };
   line_items?: any[];
+  isCompany?: boolean;
+  companyInfo?: {
+    name: string;
+    taxNumber: string;
+    commercialRegister: string;
+  };
+  pickupShowroom?: any;
+  bankTransferInfo?: {
+    holderName: string;
+    receiptUrl: string;
+    bankAccount: any;
+  };
 }
 
 interface AdminDashboardProps {
@@ -403,28 +418,48 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       const response = await fetch("/api/orders?per_page=50");
       const data = await response.json();
       if (Array.isArray(data)) {
-        const mappedOrders: Order[] = data.map(o => ({
-          id: o.id.toString(),
-          customerName: `${o.billing.first_name} ${o.billing.last_name}`,
-          customerEmail: o.billing.email,
-          total: o.total,
-          status: o.status,
-          createdAt: o.date_created,
-          billing: o.billing,
-          items: o.line_items.map((li: any) => ({
-            id: li.product_id,
-            name: li.name,
-            quantity: li.quantity,
-            price: li.price,
-            sku: li.sku,
-            images: [],
-            selectedAttributes: li.meta_data ? li.meta_data.reduce((acc: any, meta: any) => {
-              acc[meta.key] = meta.value;
-              return acc;
-            }, {}) : {}
-          })),
-          line_items: o.line_items
-        }));
+        const mappedOrders: Order[] = data.map(o => {
+          const getMeta = (key: string) => o.meta_data?.find((m: any) => m.key === key)?.value;
+          
+          return {
+            id: o.id.toString(),
+            customerName: `${o.billing.first_name} ${o.billing.last_name}`,
+            customerEmail: o.billing.email,
+            total: o.total,
+            status: o.status,
+            createdAt: o.date_created,
+            billing: o.billing,
+            payment_method: o.payment_method,
+            payment_method_title: o.payment_method_title,
+            customer_note: o.customer_note,
+            items: o.line_items.map((li: any) => ({
+              id: li.product_id,
+              name: li.name,
+              quantity: li.quantity,
+              price: li.price,
+              sku: li.sku,
+              images: [],
+              selectedAttributes: li.meta_data ? li.meta_data.reduce((acc: any, meta: any) => {
+                acc[meta.key] = meta.value;
+                return acc;
+              }, {}) : {}
+            })),
+            line_items: o.line_items,
+            // Map metadata to properties
+            isCompany: getMeta("_is_company") === "yes",
+            companyInfo: getMeta("_is_company") === "yes" ? {
+              name: getMeta("_company_name"),
+              taxNumber: getMeta("_tax_number"),
+              commercialRegister: getMeta("_commercial_register")
+            } : undefined,
+            pickupShowroom: getMeta("_order_type") === "pickup" ? (getMeta("_pickup_showroom") ? JSON.parse(getMeta("_pickup_showroom")) : undefined) : undefined,
+            bankTransferInfo: o.payment_method === "bank_transfer" ? {
+              holderName: getMeta("_bank_transfer_holder"),
+              receiptUrl: getMeta("_bank_receipt_url") || getMeta("_bank_receipt_base64"),
+              bankAccount: getMeta("_bank_account_details") ? JSON.parse(getMeta("_bank_account_details")) : undefined
+            } : undefined
+          };
+        });
         // Deduplicate orders to avoid key collisions
         const uniqueOrders = mappedOrders.filter((o, index, self) => 
           index === self.findIndex((t) => t.id === o.id)
@@ -700,8 +735,14 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
           imageUrl = media.source_url;
           imageId = media.id;
         } else {
-          const err = await uploadRes.json();
-          throw new Error("فشل رفع الصورة لووردبريس: " + (err.details?.message || err.error || JSON.stringify(err)));
+          let errDetail;
+          try {
+            errDetail = await uploadRes.json();
+          } catch (e) {
+            const text = await uploadRes.text();
+            throw new Error(`فشل رفع الصورة (خطأ ${uploadRes.status}): ${text.substring(0, 100)}`);
+          }
+          throw new Error("فشل رفع الصورة لووردبريس: " + (errDetail.details?.message || errDetail.error || JSON.stringify(errDetail)));
         }
       } catch (error: any) {
         console.error("❌ Image upload failed:", error);
@@ -1045,7 +1086,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {orders.map(order => (
+                      {orders.length > 0 ? orders.map(order => (
                         <tr key={order.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4 font-mono text-sm">#{order.id}</td>
                           <td className="px-6 py-4">{order.customerName}</td>
@@ -1074,7 +1115,15 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                             </div>
                           </td>
                         </tr>
-                      ))}
+                      )) : (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-20 text-center text-gray-400">
+                            <ClipboardList size={48} className="mx-auto mb-4 opacity-20" />
+                            <p className="font-bold text-lg">لا توجد طلبات مسجلة حالياً</p>
+                            <p className="text-sm">تأكد من وجود طلبات في متجر ووكومرس الخاص بك.</p>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2172,12 +2221,24 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                     </div>
 
                     <div className="pt-4 border-t border-gray-200 flex justify-between items-center">
+                      <span className="font-bold text-gray-500">وسيلة الدفع:</span>
+                      <span className="text-sm font-bold">{selectedOrder.payment_method_title || selectedOrder.payment_method}</span>
+                    </div>
+
+                    <div className="pt-4 border-t border-gray-200 flex justify-between items-center">
                       <span className="font-bold text-gray-500">الإجمالي:</span>
                       <span className="text-2xl font-black text-red-700">{selectedOrder.total} ر.س</span>
                     </div>
                   </div>
                 </div>
               </div>
+
+              {selectedOrder.customer_note && (
+                <div className="mb-8 p-4 bg-yellow-50 rounded-2xl border border-yellow-100">
+                  <h4 className="font-bold text-yellow-800 text-xs uppercase tracking-wider mb-2">ملاحظات العميل</h4>
+                  <p className="text-sm text-yellow-900">{selectedOrder.customer_note}</p>
+                </div>
+              )}
 
               <div className="space-y-4">
                 <h4 className="font-bold text-gray-400 text-xs uppercase tracking-wider">المنتجات المطلوبة ({selectedOrder.items.length})</h4>
