@@ -375,14 +375,6 @@ export default function App() {
           }
         }
 
-        // Fetch favorites
-        const favsRef = collection(db, `users/${u.uid}/favorites`);
-        return onSnapshot(favsRef, (snapshot) => {
-          const favIds = snapshot.docs.map(doc => parseInt(doc.id));
-          setFavorites([...new Set(favIds)]);
-        }, (error) => {
-          handleFirestoreError(error, OperationType.GET, `users/${u.uid}/favorites`);
-        });
       } else {
         setFavorites([]);
         setUserRole("customer");
@@ -390,6 +382,25 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setFavorites([]);
+      return;
+    }
+    const favsRef = collection(db, `users/${user.uid}/favorites`);
+    const unsubFavs = onSnapshot(favsRef, (snapshot) => {
+      const favIds = snapshot.docs.map(doc => parseInt(doc.id));
+      setFavorites([...new Set(favIds)]);
+    }, (error) => {
+      if (error.message.includes("permission")) {
+        console.log("Favorites Permission Denied (ignoring during auth transition)");
+      } else {
+        handleFirestoreError(error, OperationType.GET, `users/${user.uid}/favorites`);
+      }
+    });
+    return () => unsubFavs();
+  }, [user]);
 
   useEffect(() => {
     const bannersRef = collection(db, "banners");
@@ -735,6 +746,8 @@ export default function App() {
         line_items: cart.map(item => ({
           product_id: item.id,
           quantity: item.quantity,
+          total: (parseFloat(item.price.toString()) * item.quantity).toFixed(2),
+          subtotal: (parseFloat(item.price.toString()) * item.quantity).toFixed(2),
           meta_data: item.selectedAttributes ? Object.entries(item.selectedAttributes).map(([key, value]) => ({
             key,
             value: value || ""

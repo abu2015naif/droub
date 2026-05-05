@@ -416,94 +416,12 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   };
 
   const fetchOrders = async () => {
-    try {
-      const response = await fetch(`/api/orders?per_page=100&status=any&t=${Date.now()}`);
-      const data = await response.json();
-      if (Array.isArray(data)) {
-        const mappedOrders: Order[] = data.map(o => {
-          const getMeta = (key: string) => o.meta_data?.find((m: any) => m.key === key)?.value;
-          
-          return {
-            id: o.id.toString(),
-            customerName: `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || o.billing?.email || "عميل",
-            customerEmail: o.billing?.email || "",
-            customerPhone: o.billing?.phone || "",
-            total: o.total,
-            status: o.status,
-            createdAt: o.date_created,
-            billing: o.billing || {},
-            payment_method: o.payment_method,
-            payment_method_title: o.payment_method_title,
-            customer_note: o.customer_note,
-            wcOrderId: o.id,
-            items: o.line_items?.map((li: any) => ({
-              id: li.product_id,
-              name: li.name,
-              quantity: li.quantity,
-              price: li.price,
-              sku: li.sku,
-              images: [],
-              selectedAttributes: li.meta_data ? li.meta_data.reduce((acc: any, meta: any) => {
-                acc[meta.key] = meta.value;
-                return acc;
-              }, {}) : {}
-            })),
-            line_items: o.line_items,
-            // Map metadata to properties
-            isCompany: getMeta("_is_company") === "yes",
-            companyInfo: getMeta("_is_company") === "yes" ? {
-              name: getMeta("_company_name"),
-              taxNumber: getMeta("_tax_number"),
-              commercialRegister: getMeta("_commercial_register")
-            } : undefined,
-            pickupShowroom: getMeta("_order_type") === "pickup" ? (getMeta("_pickup_showroom") ? JSON.parse(getMeta("_pickup_showroom")) : undefined) : undefined,
-            bankTransferInfo: o.payment_method === "bank_transfer" ? {
-              holderName: getMeta("_bank_transfer_holder"),
-              receiptUrl: getMeta("_bank_receipt_url") || getMeta("_bank_receipt_base64"),
-              bankAccount: getMeta("_bank_account_details") ? JSON.parse(getMeta("_bank_account_details")) : undefined
-            } : undefined
-          };
-        });
-        
-        setOrders(prev => {
-          // Merge with previous orders (which might be from Firestore)
-          // Prefer WC data if IDs match as it's official, but keep rich metadata from FS
-          const merged = [...mappedOrders];
-          prev.forEach(p => {
-            // Check if this previous order (likely from FS) should be merged
-            const index = merged.findIndex(m => 
-              m.id === p.id || 
-              (m.wcOrderId && p.wcOrderId && m.wcOrderId !== 0 && m.wcOrderId === p.wcOrderId) ||
-              (m.wcOrderId && p.id === m.wcOrderId.toString() && m.wcOrderId !== 0) ||
-              (p.wcOrderId && m.id === p.wcOrderId.toString() && p.wcOrderId !== 0)
-            );
-            
-            if (index !== -1) {
-              // Duplicate found: Merge them but keep the "best" data
-              const wcOrder = merged[index];
-              merged[index] = {
-                ...p, // Start with previous (often FS)
-                ...wcOrder, // Layer WC over it
-                // Prefer rich customer info from either side
-                customerName: (wcOrder.customerName === "عميل" && p.customerName !== "عميل") ? p.customerName : wcOrder.customerName,
-                total: ((wcOrder.total === 0 || wcOrder.total === "0") && p.total !== 0 && p.total !== "0") ? p.total : wcOrder.total,
-                items: (wcOrder.items && wcOrder.items.length > 0) ? wcOrder.items : (p.items || []),
-                billing: (Object.keys(wcOrder.billing || {}).length <= 2 && p.billing && Object.keys(p.billing).length > 2) ? p.billing : (wcOrder.billing || p.billing)
-              };
-            } else {
-              merged.push(p);
-            }
-          });
-          return merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        });
-      }
-    } catch (error) {
-      console.error("Error fetching orders:", error);
-    }
+    // Disabled as per user request to rely exclusively on Firestore for orders
+    console.log("WooCommerce order fetch disabled. Using Firestore real-time sync.");
   };
 
   useEffect(() => {
-    fetchOrders();
+    // fetchOrders(); // Disabled to prevent conflicts with Firestore data as per user request
     fetchProducts();
     fetchCategories();
     fetchShippingMethods();
@@ -529,37 +447,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
         } as Order;
       });
       
-      setOrders(prev => {
-        const merged = [...prev];
-        fsOrders.forEach(fsOrder => {
-          const index = merged.findIndex(o => 
-            o.id === fsOrder.id || 
-            (fsOrder.wcOrderId && fsOrder.wcOrderId !== 0 && o.id === fsOrder.wcOrderId.toString()) ||
-            (fsOrder.wcOrderId && fsOrder.wcOrderId !== 0 && o.wcOrderId === fsOrder.wcOrderId)
-          );
-          if (index !== -1) {
-            // Update existing with firestore data (often has more local metadata)
-            // But be careful NOT to overwrite rich data with sparse data
-            const existing = merged[index];
-            merged[index] = { 
-              ...existing, 
-              ...fsOrder,
-              // Only overwrite if new data is meaningful, otherwise keep existing
-              customerName: (fsOrder.customerName === "عميل" && existing.customerName && existing.customerName !== "عميل") 
-                ? existing.customerName : fsOrder.customerName,
-              total: ((fsOrder.total === 0 || fsOrder.total === "0") && existing.total && existing.total !== 0 && existing.total !== "0")
-                ? existing.total : fsOrder.total,
-              items: (fsOrder.items.length === 0 && existing.items && existing.items.length > 0)
-                ? existing.items : fsOrder.items,
-              billing: (Object.keys(fsOrder.billing || {}).length <= 2 && existing.billing && Object.keys(existing.billing).length > 2)
-                ? existing.billing : (fsOrder.billing || existing.billing)
-            };
-          } else {
-            merged.push(fsOrder);
-          }
-        });
-        return merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      });
+      setOrders(fsOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, "orders");
     });
@@ -583,6 +471,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     });
 
     return () => {
+      unsubOrders();
       unsubUsers();
       unsubBanners();
     };
@@ -733,26 +622,59 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
 
   const updateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
     try {
-      // Update in WooCommerce
-      const response = await fetch(`/api/orders/${orderId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
-      });
+      const order = orders.find(o => o.id === orderId);
+      if (!order) return;
 
-      if (response.ok) {
-        // Update local state
-        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-        
-        // Also try to update in Firestore if it exists there
-        const q = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
+      let wcSuccess = true;
+      const wcId = order.wcOrderId || (order.id.length < 10 ? parseInt(order.id) : null);
+
+      if (wcId) {
+        // Update in WooCommerce
+        try {
+          const response = await fetch(`/api/orders/${wcId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus })
+          });
+          if (!response.ok) {
+            wcSuccess = false;
+            console.warn("WooCommerce sync failed, continuing with Firestore update");
+          }
+        } catch (err) {
+          wcSuccess = false;
+          console.error("WooCommerce API Error:", err);
+        }
+      }
+
+      // Update in Firestore
+      // Find the document ID. If orderId is long, it's already the FS id.
+      // If it's short, it's a WC id and we need to find the FS doc.
+      let fsDocId = orderId.length > 15 ? orderId : null;
+      
+      if (!fsDocId) {
+        const q = query(collection(db, "orders"), where("wcOrderId", "==", wcId));
         const querySnapshot = await getDocs(q);
-        querySnapshot.forEach(async (docSnap) => {
-          await updateDoc(doc(db, "orders", docSnap.id), { status: newStatus });
+        if (!querySnapshot.empty) {
+          fsDocId = querySnapshot.docs[0].id;
+        }
+      }
+
+      if (fsDocId) {
+        await updateDoc(doc(db, "orders", fsDocId), { 
+          status: newStatus,
+          updatedAt: new Date().toISOString()
         });
       }
+
+      // Update local state
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder(prev => prev ? { ...prev, status: newStatus } : null);
+      }
+      
     } catch (error) {
       console.error("Error updating order:", error);
+      alert("حدث خطأ أثناء تحديث حالة الطلب");
     }
   };
 
@@ -1157,9 +1079,9 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                 <div className="flex justify-between items-center">
                   <h3 className="text-2xl font-bold">إدارة الطلبات</h3>
                   <button 
-                    onClick={() => { setLoading(true); fetchOrders().finally(() => setLoading(false)); }}
+                    onClick={() => { /* Real-time via onSnapshot */ }}
                     className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
-                    title="تحديث الطلبات"
+                    title="تحديث تلقائي"
                   >
                     <Clock size={20} className={loading ? "animate-spin" : ""} />
                   </button>
