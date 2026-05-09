@@ -1202,6 +1202,146 @@ async function startServer() {
     }
   });
 
+  // Google Merchant Center Product Feed (XML route)
+  app.get("/google-merchant-feed.xml", async (req, res) => {
+    try {
+      const protocol = req.headers['x-forwarded-proto'] || 'http';
+      const host = req.headers.host;
+      const baseUrl = `${protocol}://${host}`;
+
+      console.log("📡 Generating Google Merchant Product Feed from /google-merchant-feed.xml...");
+      
+      let allProducts: any[] = [];
+      let page = 1;
+      
+      const response = await WooCommerce.get("products", {
+        per_page: 100, // Fetch up to 100 products per page
+        page: page,
+        status: "publish"
+      });
+      
+      allProducts = response.data;
+      const totalPages = parseInt(response.headers['x-wp-totalpages'] || "1");
+
+      // Fetch more pages if available (up to 500 products)
+      while (page < totalPages && page < 5) {
+        page++;
+        const nextResponse = await WooCommerce.get("products", {
+          per_page: 100,
+          page: page,
+          status: "publish"
+        });
+        allProducts = [...allProducts, ...nextResponse.data];
+      }
+
+      const feedContent = `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">
+  <channel>
+    <title>متجر دروب السلامة - Droub Al Salamah</title>
+    <link>${baseUrl}</link>
+    <description>أفضل أسعار قطع الغيار واكسسوارات السيارات الأصيلة من دروب السلامة</description>
+    <language>ar</language>
+    ${allProducts.map(product => {
+      const escape = (str: string) => String(str).replace(/[<>&"']/g, (c: string) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":"&apos;"}[c] || c));
+      
+      const title = escape(product.name);
+      const description = escape((product.description || product.short_description || "قطعة غيار سيارات أصلية بجودة عالية من متجر دروب السلامة.").replace(/<[^>]*>?/gm, '')).substring(0, 5000);
+      
+      // Correct link format to open product details in the SPA
+      const link = `${baseUrl}/?product=${product.id}`;
+      
+      const imageLink = product.images?.[0]?.src || '';
+      const price = product.price || product.regular_price || '0';
+      const availability = product.stock_status === 'instock' ? 'in stock' : 'out of stock';
+      
+      // Get Brand from attributes or metadata if possible
+      let brand = "دروب السلامة";
+      if (product.attributes) {
+        const brandAttr = product.attributes.find((a: any) => a.name === "Brand" || a.name === "الماركة");
+        if (brandAttr && brandAttr.options?.[0]) brand = brandAttr.options[0];
+      }
+
+      return `
+    <item>
+      <g:id>${product.id}</g:id>
+      <g:title>${title}</g:title>
+      <g:description>${description}</g:description>
+      <g:link>${link}</g:link>
+      <g:image_link>${imageLink}</g:image_link>
+      <g:condition>new</g:condition>
+      <g:availability>${availability}</g:availability>
+      <g:price>${price} SAR</g:price>
+      <g:brand>${escape(brand)}</g:brand>
+      ${product.categories && product.categories[0] ? `<g:product_type>${escape(product.categories[0].name)}</g:product_type>` : ''}
+      <g:google_product_category>603</g:google_product_category>
+    </item>`;
+    }).join('')}
+  </channel>
+</rss>`;
+
+      res.header("Content-Type", "application/xml");
+      res.send(feedContent);
+    } catch (error: any) {
+      console.error("❌ Error generating Google Merchant feed:", error.message);
+      res.status(500).send("Error generating feed");
+    }
+  });
+
+  // Dynamic Sitemap.xml
+  app.get("/sitemap.xml", async (req, res) => {
+    try {
+      const host = req.headers.host;
+      const protocol = req.headers['x-forwarded-proto'] || 'http';
+      const baseUrl = `${protocol}://${host}`;
+
+      console.log("🌐 Generating Sitemap.xml...");
+      
+      // Fetch products for the sitemap
+      const response = await WooCommerce.get("products", {
+        per_page: 100,
+        status: "publish"
+      });
+      
+      const products = response.data;
+      const currentDate = new Date().toISOString().split('T')[0];
+
+      const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${baseUrl}/</loc>
+    <lastmod>${currentDate}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  ${products.map((p: any) => `
+  <url>
+    <loc>${baseUrl}/?product=${p.id}</loc>
+    <lastmod>${p.date_modified ? p.date_modified.split('T')[0] : currentDate}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>`).join('')}
+</urlset>`;
+
+      res.header("Content-Type", "application/xml");
+      res.status(200).send(sitemap);
+    } catch (error) {
+      console.error("❌ Sitemap Error:", error);
+      res.status(500).send("Error generating sitemap");
+    }
+  });
+
+  // Robots.txt
+  app.get("/robots.txt", (req, res) => {
+    const host = req.headers.host;
+    const protocol = req.headers['x-forwarded-proto'] || 'http';
+    const baseUrl = `${protocol}://${host}`;
+    
+    res.type('text/plain');
+    res.send(`User-agent: *
+Allow: /
+Sitemap: ${baseUrl}/sitemap.xml`);
+  });
+
   // Catch-all for /api/* to prevent returning HTML
   app.all("/api/*", (req, res) => {
     res.status(404).json({ error: `API route not found: ${req.method} ${req.path}` });

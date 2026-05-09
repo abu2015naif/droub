@@ -20,9 +20,9 @@ const SEO: React.FC<SEOProps> = ({
   type = 'website',
   schemaData 
 }) => {
-  const fullTitle = `${title} | متجر أبو نايف`;
-  const siteUrl = 'https://ais-pre-e53bvkxzqmlpuwmv46h5ao-272387700083.europe-west1.run.app';
-  const canonicalUrl = url ? `${siteUrl}${url}` : siteUrl;
+  const fullTitle = `${title} | متجر دروب السلامة`;
+  const siteUrl = 'https://droubalsalamah.com';
+  const canonicalUrl = url ? (url.startsWith('http') ? url : `${siteUrl}${url}`) : siteUrl;
 
   return (
     <Helmet>

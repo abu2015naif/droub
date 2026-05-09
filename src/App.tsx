@@ -1262,28 +1262,65 @@ export default function App() {
       {/* Dynamic SEO */}
       {selectedProduct ? (
         <SEO 
-          title={selectedProduct.name}
-          description={selectedProduct.description ? selectedProduct.description.replace(/<[^>]*>?/gm, '').substring(0, 160) : `اشتري ${selectedProduct.name} الآن من متجر أبو نايف. سعر منافس وجودة عالية.`}
+          title={`${selectedProduct.name} - قطع غيار ${selectedProduct.categories?.[0]?.name || 'أصلية'}`}
+          description={selectedProduct.description 
+            ? selectedProduct.description.replace(/<[^>]*>?/gm, '').substring(0, 160) 
+            : `اطلب ${selectedProduct.name} الآن من متجر دروب السلامة. أفضل سعر لقطع غيار واكسسوارات السيارات في السعودية. توصيل سريع وضمان جودة.`}
           image={selectedProduct.images?.[0]?.src}
           type="product"
-          url={`/product/${selectedProduct.id}`}
-          keywords={`${selectedProduct.name}, ${selectedProduct.categories?.map(c => c.name).join(', ')}, متجر أبو نايف`}
+          url={`/?product=${selectedProduct.id}`}
+          keywords={`${selectedProduct.name}, قطع غيار ${selectedProduct.categories?.[0]?.name || ''}, اكسسوارات سيارات السعودية, دروب السلامة, ${selectedProduct.sku || ''}`}
           schemaData={{
             "@context": "https://schema.org/",
             "@type": "Product",
             "name": selectedProduct.name,
             "image": selectedProduct.images?.map(img => img.src) || [],
-            "description": selectedProduct.description?.replace(/<[^>]*>?/gm, ''),
-            "sku": selectedProduct.sku || selectedProduct.id.toString(),
+            "description": selectedProduct.description?.replace(/<[^>]*>?/gm, '').substring(0, 5000) || `${selectedProduct.name} متوفر الآن في متجر دروب السلامة بأفضل جودة وأنسب سعر.`,
+            "sku": selectedProduct.sku || `DS-${selectedProduct.id}`,
+            "mpn": selectedProduct.sku || selectedProduct.id.toString(),
+            "brand": {
+              "@type": "Brand",
+              "name": selectedProduct.attributes?.find((a: any) => a.name === "Brand" || a.name === "الماركة")?.options?.[0] || "دروب السلامة"
+            },
             "offers": {
               "@type": "Offer",
-              "url": window.location.href,
+              "url": `https://droubalsalamah.com/?product=${selectedProduct.id}`,
               "priceCurrency": "SAR",
-              "price": selectedProduct.price,
-              "availability": "https://schema.org/InStock",
+              "price": selectedProduct.price || "0",
+              "priceValidUntil": "2026-12-31",
+              "availability": selectedProduct.stock_status === "instock" ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+              "itemCondition": "https://schema.org/NewCondition",
+              "shippingDetails": {
+                "@type": "OfferShippingDetails",
+                "shippingRate": {
+                  "@type": "MonetaryAmount",
+                  "value": "28",
+                  "currency": "SAR"
+                },
+                "shippingDestination": {
+                  "@type": "DefinedRegion",
+                  "addressCountry": "SA"
+                },
+                "deliveryTime": {
+                  "@type": "ShippingDeliveryTime",
+                  "handlingTime": {
+                    "@type": "QuantitativeValue",
+                    "minValue": 0,
+                    "maxValue": 1,
+                    "unitCode": "DAY"
+                  },
+                  "transitTime": {
+                    "@type": "QuantitativeValue",
+                    "minValue": 1,
+                    "maxValue": 3,
+                    "unitCode": "DAY"
+                  }
+                }
+              },
               "seller": {
                 "@type": "Organization",
-                "name": "متجر أبو نايف"
+                "name": "دروب السلامة",
+                "url": "https://droubalsalamah.com"
               }
             }
           }}
@@ -1291,19 +1328,19 @@ export default function App() {
       ) : activeTab === "home" ? (
         <SEO 
           title="الرئيسية"
-          description="متجر أبو نايف - وجهتك الأولى لأفضل المنتجات بجودة عالية وأسعار منافسة في المملكة العربية السعودية."
-          keywords="متجر إلكتروني, تسوق, السعودية, أبو نايف, عروض, تخفيضات"
+          description="دروب السلامة - وجهتك الأولى لأفضل قطع الغيار واكسسوارات السيارات بجودة عالية وأسعار منافسة في المملكة العربية السعودية."
+          keywords="قطع غيار, اكسسوارات سيارات, السعودية, دروب السلامة, عروض, تخفيضات"
         />
       ) : activeTab === "shop" ? (
         <SEO 
           title={selectedCategory ? categories.find(c => c.id === selectedCategory)?.name || "المتجر" : "كل المنتجات"}
-          description="تصفح تشكيلة واسعة من المنتجات المميزة في متجر أبو نايف. شحن سريع ودفع آمن."
+          description="تصفح تشكيلة واسعة من المنتجات المميزة في متجر دروب السلامة. شحن سريع ودفع آمن."
           keywords="منتجات, تسوق أونلاين, فئات"
         />
       ) : (
         <SEO 
           title={activeTab === "profile" ? "حسابي" : activeTab === "checkout" ? "إتمام الطلب" : "المتجر"}
-          description="متجر أبو نايف للإلكترونيات والمنتجات المميزة."
+          description="متجر دروب السلامة لقطع غيار واكسسوارات السيارات الأصيلة."
         />
       )}
 
