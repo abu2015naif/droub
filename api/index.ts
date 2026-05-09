@@ -1165,13 +1165,13 @@ async function startServer() {
   <channel>
     <title>متجر دروب السلامة - Droub Al Salamah</title>
     <link>https://droubalsalamah.com</link>
-    <description>أفضل أسعار قطع الغيار واكسسوارات السيارات</description>
+    <description>متجر دروب السلامة - متخصصون في أدوات السلامة المهنية، المرورية، الشخصية، ومعدات إطفاء وكشف الحرائق</description>
     ${allProducts.map(product => {
       // Basic XML encoding for title and description
       const escape = (str: string) => String(str).replace(/[<>&"']/g, (c: string) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":"&apos;"}[c] || c));
       
       const title = escape(product.name);
-      const description = escape((product.description || product.short_description || "").replace(/<[^>]*>?/gm, '')).substring(0, 5000);
+      const description = escape((product.description || product.short_description || "أدوات سلامة مهنية ومعدات إطفاء حريق عالية الجودة من متجر دروب السلامة.").replace(/<[^>]*>?/gm, '')).substring(0, 5000);
       const link = product.permalink || `https://droubalsalamah.com/product/${product.slug}`;
       const imageLink = product.images?.[0]?.src || '';
       const price = product.price || product.regular_price || '0';
@@ -1205,9 +1205,7 @@ async function startServer() {
   // Google Merchant Center Product Feed (XML route)
   app.get("/google-merchant-feed.xml", async (req, res) => {
     try {
-      const protocol = req.headers['x-forwarded-proto'] || 'http';
-      const host = req.headers.host;
-      const baseUrl = `${protocol}://${host}`;
+      const baseUrl = "https://droubalsalamah.com";
 
       console.log("📡 Generating Google Merchant Product Feed from /google-merchant-feed.xml...");
       
@@ -1239,13 +1237,13 @@ async function startServer() {
   <channel>
     <title>متجر دروب السلامة - Droub Al Salamah</title>
     <link>${baseUrl}</link>
-    <description>أفضل أسعار قطع الغيار واكسسوارات السيارات الأصيلة من دروب السلامة</description>
+    <description>متجر دروب السلامة - متخصصون في أدوات السلامة المهنية، المرورية، الشخصية، ومعدات إطفاء وكشف الحرائق</description>
     <language>ar</language>
     ${allProducts.map(product => {
       const escape = (str: string) => String(str).replace(/[<>&"']/g, (c: string) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":"&apos;"}[c] || c));
       
       const title = escape(product.name);
-      const description = escape((product.description || product.short_description || "قطعة غيار سيارات أصلية بجودة عالية من متجر دروب السلامة.").replace(/<[^>]*>?/gm, '')).substring(0, 5000);
+      const description = escape((product.description || product.short_description || "أدوات سلامة مهنية ومعدات إطفاء حريق عالية الجودة من متجر دروب السلامة.").replace(/<[^>]*>?/gm, '')).substring(0, 5000);
       
       // Correct link format to open product details in the SPA
       const link = `${baseUrl}/?product=${product.id}`;
@@ -1290,19 +1288,32 @@ async function startServer() {
   // Dynamic Sitemap.xml
   app.get("/sitemap.xml", async (req, res) => {
     try {
-      const host = req.headers.host;
-      const protocol = req.headers['x-forwarded-proto'] || 'http';
-      const baseUrl = `${protocol}://${host}`;
+      const baseUrl = "https://droubalsalamah.com";
 
       console.log("🌐 Generating Sitemap.xml...");
       
-      // Fetch products for the sitemap
+      // Fetch products for the sitemap (multiple pages to ensure full indexability)
+      let page = 1;
       const response = await WooCommerce.get("products", {
         per_page: 100,
+        page: page,
         status: "publish"
       });
       
-      const products = response.data;
+      let products = response.data;
+      const totalPages = parseInt(response.headers['x-wp-totalpages'] || "1");
+
+      // Fetch up to 5 pages (500 products) for sitemap
+      while (page < totalPages && page < 5) {
+        page++;
+        const nextResponse = await WooCommerce.get("products", {
+          per_page: 100,
+          page: page,
+          status: "publish"
+        });
+        products = [...products, ...nextResponse.data];
+      }
+      
       const currentDate = new Date().toISOString().split('T')[0];
 
       const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1332,9 +1343,7 @@ async function startServer() {
 
   // Robots.txt
   app.get("/robots.txt", (req, res) => {
-    const host = req.headers.host;
-    const protocol = req.headers['x-forwarded-proto'] || 'http';
-    const baseUrl = `${protocol}://${host}`;
+    const baseUrl = "https://droubalsalamah.com";
     
     res.type('text/plain');
     res.send(`User-agent: *

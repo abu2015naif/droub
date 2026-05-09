@@ -37,7 +37,11 @@ import {
   Upload,
   AlertTriangle
 } from "lucide-react";
-import { SAMPLE_PRODUCTS, SAMPLE_CATEGORIES } from "./constants";
+import { 
+  SAMPLE_PRODUCTS, 
+  SAMPLE_CATEGORIES, 
+  GLOBAL_SEO_KEYWORDS 
+} from "./constants";
 import { Product, Category, CartItem, Banner, Showroom, BankDetails } from "./types";
 import { auth, db, googleProvider, signInWithPopup, signOut, doc, setDoc, deleteDoc, onSnapshot, collection, getDoc, addDoc, handleFirestoreError, OperationType, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile, query, where, getDocs, orderBy, RecaptchaVerifier, signInWithPhoneNumber, updateDoc } from "./firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
@@ -59,6 +63,10 @@ export default function App() {
     testConnection();
   }, []);
   const [products, setProducts] = useState<Product[]>([]);
+  // Generate product titles as keywords for global SEO
+  const productTitlesAsKeywords = useMemo(() => {
+    return products.slice(0, 50).map(p => p.name).join(", ");
+  }, [products]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
@@ -1262,14 +1270,14 @@ export default function App() {
       {/* Dynamic SEO */}
       {selectedProduct ? (
         <SEO 
-          title={`${selectedProduct.name} - قطع غيار ${selectedProduct.categories?.[0]?.name || 'أصلية'}`}
+          title={`${selectedProduct.name} - أدوات سلامة ووقاية`}
           description={selectedProduct.description 
             ? selectedProduct.description.replace(/<[^>]*>?/gm, '').substring(0, 160) 
-            : `اطلب ${selectedProduct.name} الآن من متجر دروب السلامة. أفضل سعر لقطع غيار واكسسوارات السيارات في السعودية. توصيل سريع وضمان جودة.`}
+            : `اطلب ${selectedProduct.name} الآن من متجر دروب السلامة. أفضل سعر لأدوات السلامة المهنية ومعدات إطفاء الحريق في السعودية.`}
           image={selectedProduct.images?.[0]?.src}
           type="product"
-          url={`/?product=${selectedProduct.id}`}
-          keywords={`${selectedProduct.name}, قطع غيار ${selectedProduct.categories?.[0]?.name || ''}, اكسسوارات سيارات السعودية, دروب السلامة, ${selectedProduct.sku || ''}`}
+          url={`https://droubalsalamah.com/?product=${selectedProduct.id}`}
+          keywords={`${selectedProduct.name}, أدوات سلامة مهنية, معدات حريق السعودية, دروب السلامة, ${selectedProduct.sku || ''}, ${productTitlesAsKeywords}, ${GLOBAL_SEO_KEYWORDS}`}
           schemaData={{
             "@context": "https://schema.org/",
             "@type": "Product",
@@ -1328,19 +1336,20 @@ export default function App() {
       ) : activeTab === "home" ? (
         <SEO 
           title="الرئيسية"
-          description="دروب السلامة - وجهتك الأولى لأفضل قطع الغيار واكسسوارات السيارات بجودة عالية وأسعار منافسة في المملكة العربية السعودية."
-          keywords="قطع غيار, اكسسوارات سيارات, السعودية, دروب السلامة, عروض, تخفيضات"
+          description="دروب السلامة - وجهتك الأولى لأفضل أدوات السلامة المهنية، المرورية، الشخصية، ومعدات إطفاء وكشف الحرائق بجودة عالية في السعودية."
+          keywords={`أدوات سلامة, طفايات حريق, سلامة مهنية, السعودية, دروب السلامة, عروض, تخفيضات, ${productTitlesAsKeywords}, ${GLOBAL_SEO_KEYWORDS}`}
         />
       ) : activeTab === "shop" ? (
         <SEO 
           title={selectedCategory ? categories.find(c => c.id === selectedCategory)?.name || "المتجر" : "كل المنتجات"}
-          description="تصفح تشكيلة واسعة من المنتجات المميزة في متجر دروب السلامة. شحن سريع ودفع آمن."
-          keywords="منتجات, تسوق أونلاين, فئات"
+          description="تصفح تشكيلة واسعة من أدوات السلامة المهنية ومعدات إطفاء الحريق في متجر دروب السلامة. شحن سريع ودفع آمن لكل مدن السعودية."
+          keywords={`معدات سلامة, تسوق أونلاين, فئات, عروض أدوات الحريق, ${productTitlesAsKeywords}, ${GLOBAL_SEO_KEYWORDS}`}
         />
       ) : (
         <SEO 
           title={activeTab === "profile" ? "حسابي" : activeTab === "checkout" ? "إتمام الطلب" : "المتجر"}
-          description="متجر دروب السلامة لقطع غيار واكسسوارات السيارات الأصيلة."
+          description="متجر دروب السلامة لأدوات السلامة ومعدات إطفاء الحريق - جودة نثق بها."
+          keywords={`حسابي, طلبات, أدوات سلامة السعودية, ${productTitlesAsKeywords}, ${GLOBAL_SEO_KEYWORDS}`}
         />
       )}
 
