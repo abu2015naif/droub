@@ -4013,8 +4013,19 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
     const setup = async () => {
       if (isOpen && isPhoneMode && recaptchaContainerRef.current) {
         try {
+          // If already exists, clear it first
+          if (recaptchaVerifierRef.current) {
+            try {
+              recaptchaVerifierRef.current.clear();
+            } catch (e) {
+              // Ignore cleanup errors
+            }
+          }
+
           // Clear container to prevent duplicate rendering
-          recaptchaContainerRef.current.innerHTML = '<div id="recaptcha-verifier-container"></div>';
+          if (recaptchaContainerRef.current) {
+            recaptchaContainerRef.current.innerHTML = '<div id="recaptcha-verifier-container"></div>';
+          }
           
           const verifierElement = document.getElementById('recaptcha-verifier-container');
           if (!verifierElement) return;
@@ -4026,7 +4037,9 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
             },
             'expired-callback': () => {
               if (recaptchaVerifierRef.current) {
-                recaptchaVerifierRef.current.clear();
+                try {
+                  recaptchaVerifierRef.current.clear();
+                } catch (e) {}
                 setup();
               }
             }
@@ -4045,14 +4058,19 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
     return () => {
       if (verifier) {
         try {
-          verifier.clear();
+          // Add a safety check before clearing
+          if (typeof verifier.clear === 'function') {
+            verifier.clear();
+          }
         } catch (e) {
-          console.error("Error clearing recaptcha:", e);
+          // Don't log this to console as it's usually benign during unmount
         }
-        recaptchaVerifierRef.current = null;
+        if (recaptchaVerifierRef.current === verifier) {
+          recaptchaVerifierRef.current = null;
+        }
       }
     };
-  }, [isOpen, isPhoneMode]);
+  }, [isOpen, isPhoneMode, auth]);
 
   if (!isOpen) return null;
 
@@ -4084,19 +4102,11 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
 
     setLoading(true);
     try {
-      // If we already have a verifier, try to reset it to be safe
-      if (recaptchaVerifierRef.current) {
-        try {
-          // Some versions of Firebase might throw if we clear and then use, 
-          // so we just ensure it's rendered.
-          await recaptchaVerifierRef.current.render();
-        } catch (e) {
-          console.warn("Recaptcha render warning:", e);
-        }
-      }
-
       const appVerifier = recaptchaVerifierRef.current;
-      if (!appVerifier) throw new Error("Recaptcha not initialized");
+      if (!appVerifier) {
+        // Fallback: try to initialize if missing
+        throw new Error("Recaptcha not initialized. Please refresh page.");
+      }
       
       const confirmation = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
       setConfirmationResult(confirmation);
@@ -4104,33 +4114,29 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
     } catch (error: any) {
       console.error("Phone auth error:", error);
       
-      // If error is -39, it's often a recaptcha issue, try to clear it for the next attempt
+      // If error is -39 or internal-error, it's often a recaptcha issue
       if (error.code === 'auth/internal-error' || error.message?.includes('-39')) {
         if (recaptchaVerifierRef.current) {
           try {
             recaptchaVerifierRef.current.clear();
             recaptchaVerifierRef.current = null;
-          } catch (e) {
-            console.error("Error clearing recaptcha after -39:", e);
-          }
+          } catch (e) {}
         }
-        // Force a re-setup of recaptcha
-        setTimeout(() => {
-          setIsPhoneMode(false);
-          setTimeout(() => setIsPhoneMode(true), 100);
-        }, 100);
+        // Instead of immediate retry, recommend refresh if it continues
+        console.warn("Retrying recaptcha setup after internal error...");
+        setIsPhoneMode(false);
+        setTimeout(() => setIsPhoneMode(true), 150);
       }
 
       let message = "حدث خطأ في إرسال الرمز. يرجى المحاولة مرة أخرى.";
       if (error.code === 'auth/invalid-phone-number') message = "رقم الجوال غير صحيح.";
       if (error.code === 'auth/too-many-requests') message = "تم إرسال الكثير من الطلبات، يرجى المحاولة لاحقاً.";
-      if (error.code === 'auth/unauthorized-domain') message = "هذا النطاق (Domain) غير مصرح له باستخدام خدمة التحقق بالجوال. يرجى التأكد من إضافة droubalsalamah.com و www.droubalsalamah.com في لوحة تحكم Firebase.";
+      if (error.code === 'auth/unauthorized-domain') {
+        const domain = window.location.hostname;
+        message = `هذا النطاق (${domain}) غير مصرح له باستخدام خدمة التحقق. يرجى إضافته في لوحة تحكم Firebase.`;
+      }
       if (error.code === 'auth/internal-error' || error.message.includes('-39')) {
-        message = "حدث خطأ في نظام التحقق. يرجى المحاولة مرة أخرى أو تحديث الصفحة.";
-        if (recaptchaVerifierRef.current) {
-          recaptchaVerifierRef.current.clear();
-          recaptchaVerifierRef.current = null;
-        }
+        message = "حدث خطأ في نظام التحقق (reCAPTCHA). يرجى المحاولة مرة أخرى أو تحديث الصفحة.";
       }
       
       // Show error code for debugging if it's something else
@@ -4193,7 +4199,11 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
     setIsPhoneMode(false);
     setShowOTP(false);
     if (recaptchaVerifierRef.current) {
-      recaptchaVerifierRef.current.clear();
+      try {
+        if (typeof recaptchaVerifierRef.current.clear === 'function') {
+          recaptchaVerifierRef.current.clear();
+        }
+      } catch (e) {}
       recaptchaVerifierRef.current = null;
     }
   };
@@ -4204,7 +4214,11 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
     setIsResetMode(false);
     setShowOTP(false);
     if (recaptchaVerifierRef.current) {
-      recaptchaVerifierRef.current.clear();
+      try {
+        if (typeof recaptchaVerifierRef.current.clear === 'function') {
+          recaptchaVerifierRef.current.clear();
+        }
+      } catch (e) {}
       recaptchaVerifierRef.current = null;
     }
   };

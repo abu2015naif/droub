@@ -1127,6 +1127,81 @@ async function startServer() {
     }
   });
 
+  // Google Merchant Center Product Feed
+  app.get("/api/google-merchant-feed", async (req, res) => {
+    try {
+      console.log("📡 Generating Google Merchant Product Feed...");
+      
+      // We'll fetch products in chunks to build the full feed
+      let allProducts: any[] = [];
+      let page = 1;
+      let totalPages = 1;
+
+      // Fetch first page to get total pages
+      const firstResponse = await WooCommerce.get("products", {
+        per_page: 100,
+        page: page,
+        status: "publish"
+      });
+      
+      allProducts = [...firstResponse.data];
+      totalPages = parseInt(firstResponse.headers['x-wp-totalpages'] || "1");
+      
+      // Fetch remaining pages (limit to top 1000 products for performance)
+      while (page < totalPages && page < 10) {
+        page++;
+        const response = await WooCommerce.get("products", {
+          per_page: 100,
+          page: page,
+          status: "publish"
+        });
+        allProducts = [...allProducts, ...response.data];
+      }
+
+      console.log(`✅ Collected ${allProducts.length} products for the feed.`);
+
+      const feedContent = `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">
+  <channel>
+    <title>متجر دروب السلامة - Droub Al Salamah</title>
+    <link>https://droubalsalamah.com</link>
+    <description>أفضل أسعار قطع الغيار واكسسوارات السيارات</description>
+    ${allProducts.map(product => {
+      // Basic XML encoding for title and description
+      const escape = (str: string) => String(str).replace(/[<>&"']/g, (c: string) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":"&apos;"}[c] || c));
+      
+      const title = escape(product.name);
+      const description = escape((product.description || product.short_description || "").replace(/<[^>]*>?/gm, '')).substring(0, 5000);
+      const link = product.permalink || `https://droubalsalamah.com/product/${product.slug}`;
+      const imageLink = product.images?.[0]?.src || '';
+      const price = product.price || product.regular_price || '0';
+      const availability = product.stock_status === 'instock' ? 'in stock' : 'out of stock';
+      
+      return `
+    <item>
+      <g:id>${product.id}</g:id>
+      <g:title>${title}</g:title>
+      <g:description>${description}</g:description>
+      <g:link>${link}</g:link>
+      <g:image_link>${imageLink}</g:image_link>
+      <g:condition>new</g:condition>
+      <g:availability>${availability}</g:availability>
+      <g:price>${price} SAR</g:price>
+      <g:brand>دروب السلامة</g:brand>
+      ${product.categories && product.categories[0] ? `<g:product_type>${escape(product.categories[0].name)}</g:product_type>` : ''}
+    </item>`;
+    }).join('')}
+  </channel>
+</rss>`;
+
+      res.header("Content-Type", "application/xml");
+      res.send(feedContent);
+    } catch (error: any) {
+      console.error("❌ Error generating Google Merchant feed:", error.message);
+      res.status(500).send("Error generating feed");
+    }
+  });
+
   // Catch-all for /api/* to prevent returning HTML
   app.all("/api/*", (req, res) => {
     res.status(404).json({ error: `API route not found: ${req.method} ${req.path}` });
