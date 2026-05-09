@@ -1221,15 +1221,20 @@ async function startServer() {
       allProducts = response.data;
       const totalPages = parseInt(response.headers['x-wp-totalpages'] || "1");
 
-      // Fetch more pages if available (up to 500 products)
-      while (page < totalPages && page < 5) {
+      // Fetch more pages if available (up to 2000 products)
+      while (page < totalPages && page < 20) {
         page++;
-        const nextResponse = await WooCommerce.get("products", {
-          per_page: 100,
-          page: page,
-          status: "publish"
-        });
-        allProducts = [...allProducts, ...nextResponse.data];
+        try {
+          const nextResponse = await WooCommerce.get("products", {
+            per_page: 100,
+            page: page,
+            status: "publish"
+          });
+          allProducts = [...allProducts, ...nextResponse.data];
+        } catch (e) {
+          console.error(`Error fetching products page ${page} for merchant feed:`, e);
+          break;
+        }
       }
 
       const feedContent = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1303,15 +1308,32 @@ async function startServer() {
       let products = response.data;
       const totalPages = parseInt(response.headers['x-wp-totalpages'] || "1");
 
-      // Fetch up to 5 pages (500 products) for sitemap
-      while (page < totalPages && page < 5) {
+      // Fetch up to 20 pages (2000 products) for sitemap to be more comprehensive
+      while (page < totalPages && page < 20) {
         page++;
-        const nextResponse = await WooCommerce.get("products", {
+        try {
+          const nextResponse = await WooCommerce.get("products", {
+            per_page: 100,
+            page: page,
+            status: "publish"
+          });
+          products = [...products, ...nextResponse.data];
+        } catch (e) {
+          console.error(`Error fetching products page ${page}:`, e);
+          break;
+        }
+      }
+      
+      // Fetch categories for sitemap
+      let categories: any[] = [];
+      try {
+        const catResponse = await WooCommerce.get("products/categories", {
           per_page: 100,
-          page: page,
-          status: "publish"
+          hide_empty: true
         });
-        products = [...products, ...nextResponse.data];
+        categories = catResponse.data;
+      } catch (e) {
+        console.error("Error fetching categories for sitemap:", e);
       }
       
       const currentDate = new Date().toISOString().split('T')[0];
@@ -1324,6 +1346,13 @@ async function startServer() {
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
+  ${categories.map((c: any) => `
+  <url>
+    <loc>${baseUrl}/?category=${c.id}</loc>
+    <lastmod>${currentDate}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>`).join('')}
   ${products.map((p: any) => `
   <url>
     <loc>${baseUrl}/?product=${p.id}</loc>
