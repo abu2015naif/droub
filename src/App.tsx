@@ -47,6 +47,8 @@ import { auth, db, googleProvider, signInWithPopup, signOut, doc, setDoc, delete
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import AdminDashboard from "./components/AdminDashboard";
 import SEO from "./components/SEO";
+import SEODirectory from "./components/SEODirectory";
+import { ALL_SEO_KEYWORDS_LIST } from "./seo-data";
 
 const testConnection = async () => {
   try {
@@ -67,6 +69,11 @@ export default function App() {
   const productTitlesAsKeywords = useMemo(() => {
     return products.slice(0, 50).map(p => p.name).join(", ");
   }, [products]);
+
+  const allCombinedKeywords = useMemo(() => {
+    return `${GLOBAL_SEO_KEYWORDS}, ${ALL_SEO_KEYWORDS_LIST.join(", ")}`;
+  }, []);
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
@@ -130,7 +137,7 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"home" | "shop" | "admin" | "checkout" | "profile" | "returns">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "shop" | "admin" | "checkout" | "profile" | "returns" | "seo-directory">("home");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [shippingMethods, setShippingMethods] = useState<any[]>([]);
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -1324,19 +1331,25 @@ export default function App() {
         <SEO 
           title="الرئيسية"
           description="دروب السلامة - وجهتك الأولى لأفضل أدوات السلامة المهنية، المرورية، الشخصية، ومعدات إطفاء وكشف الحرائق بجودة عالية في السعودية."
-          keywords={`أدوات سلامة, طفايات حريق, سلامة مهنية, السعودية, دروب السلامة, عروض, تخفيضات, ${productTitlesAsKeywords}, ${GLOBAL_SEO_KEYWORDS}`}
+          keywords={`أدوات سلامة, طفايات حريق, سلامة مهنية, السعودية, دروب السلامة, عروض, تخفيضات, ${productTitlesAsKeywords}, ${allCombinedKeywords}`}
         />
       ) : activeTab === "shop" ? (
         <SEO 
           title={selectedCategory ? categories.find(c => c.id === selectedCategory)?.name || "المتجر" : "كل المنتجات"}
           description="تصفح تشكيلة واسعة من أدوات السلامة المهنية ومعدات إطفاء الحريق في متجر دروب السلامة. شحن سريع ودفع آمن لكل مدن السعودية."
-          keywords={`معدات سلامة, تسوق أونلاين, فئات, عروض أدوات الحريق, ${productTitlesAsKeywords}, ${GLOBAL_SEO_KEYWORDS}`}
+          keywords={`معدات سلامة, تسوق أونلاين, فئات, عروض أدوات الحريق, ${productTitlesAsKeywords}, ${allCombinedKeywords}`}
+        />
+      ) : activeTab === "seo-directory" ? (
+        <SEO 
+          title="دليل الكلمات ومعدات السلامة"
+          description="دليل الكلمات المفتاحية ومصطلحات السلامة المهنية والأمن الصناعي وحملات جوجل الإعلانية Google Ads لتأمين مخلفات وتراخيص الدفاع المدني ومطابقة شروط بلدية المملكة."
+          keywords={`كلمات مفتاحية سلامة, جوجل آدز سلامة مهنية, سيفتي شوز, قفازات حماية, خوذة سلامة, ${allCombinedKeywords.slice(0, 1000)}`}
         />
       ) : (
         <SEO 
           title={activeTab === "profile" ? "حسابي" : activeTab === "checkout" ? "إتمام الطلب" : "المتجر"}
           description="متجر دروب السلامة لأدوات السلامة ومعدات إطفاء الحريق - جودة نثق بها."
-          keywords={`حسابي, طلبات, أدوات سلامة السعودية, ${productTitlesAsKeywords}, ${GLOBAL_SEO_KEYWORDS}`}
+          keywords={`حسابي, طلبات, أدوات سلامة السعودية, ${productTitlesAsKeywords}, ${allCombinedKeywords}`}
         />
       )}
 
@@ -1740,6 +1753,11 @@ export default function App() {
           />
         ) : activeTab === "returns" ? (
           <ReturnsPage onBack={() => setActiveTab("home")} />
+        ) : activeTab === "seo-directory" ? (
+          <SEODirectory 
+            onBack={() => setActiveTab("home")}
+            onSelectCategory={(catId) => { setSelectedCategory(catId); setActiveTab("shop"); }}
+          />
         ) : activeTab === "checkout" ? (
           <CheckoutPage 
             cart={cart} 
@@ -2201,8 +2219,11 @@ export default function App() {
               </ul>
             </div>
           </div>
-          <div className="border-t border-gray-800 pt-8 text-center text-gray-500 text-sm">
+          <div className="border-t border-gray-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-gray-500 text-sm">
             <p>© {new Date().getFullYear()} شركة دروب السلامة. جميع الحقوق محفوظة.</p>
+            <div className="flex gap-4">
+              <button onClick={() => setActiveTab("seo-directory")} className="hover:text-gray-400 transition-colors text-xs text-gray-600">فهرس الكلمات المفتاحية (SEO)</button>
+            </div>
           </div>
         </div>
       </footer>

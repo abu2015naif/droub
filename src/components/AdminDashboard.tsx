@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { db, collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, query, where, getDocs, handleFirestoreError, OperationType, setDoc, getDoc } from "../firebase";
 import { Product, Showroom, BankDetails, Employee } from "../types";
+import SEODirectory from "./SEODirectory";
 
 interface Order {
   id: string;
@@ -86,7 +87,7 @@ interface Banner {
 }
 
 export default function AdminDashboard({ userRole, userPermissions }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'home' | 'payment_methods'>('orders');
+  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'home' | 'payment_methods' | 'seo'>('orders');
   
   // Check permissions
   const hasPermission = (tab: string) => {
@@ -103,6 +104,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       case 'shipping': return userPermissions.shipping;
       case 'home': return userPermissions.settings; // Use settings permission for home settings
       case 'payment_methods': return userPermissions.settings; // Use settings permission for payment methods
+      case 'seo': return true; // SEO directory is accessible to all staff
       default: return false;
     }
   };
@@ -110,8 +112,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   useEffect(() => {
     // If current tab is not allowed, switch to first allowed tab
     if (!hasPermission(activeTab)) {
-      const tabs: ('products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'payment_methods')[] = 
-        ['orders', 'products', 'employees', 'shipping', 'banners', 'showrooms', 'settings', 'payment_methods'];
+      const tabs: ('products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'payment_methods' | 'seo')[] = 
+        ['orders', 'products', 'employees', 'shipping', 'banners', 'showrooms', 'settings', 'payment_methods', 'seo'];
       const firstAllowed = tabs.find(t => hasPermission(t));
       if (firstAllowed) setActiveTab(firstAllowed);
     }
@@ -1062,6 +1064,16 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                 >
                   <SettingsIcon size={20} />
                   <span className="font-bold">إعدادات المتجر</span>
+                </button>
+              )}
+
+              {hasPermission('seo') && (
+                <button 
+                  onClick={() => setActiveTab('seo')}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'seo' ? 'bg-red-600 text-white shadow-lg shadow-red-100' : 'hover:bg-gray-50 text-gray-600'}`}
+                >
+                  <FileText size={20} />
+                  <span className="font-bold">دليل الكلمات (SEO)</span>
                 </button>
               )}
             </nav>
@@ -2017,6 +2029,20 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                     <p className="text-gray-500">لا يوجد حسابات بنكية مضافة حالياً</p>
                   </div>
                 )}
+              </motion.div>
+            )}
+
+            {activeTab === 'seo' && (
+              <motion.div 
+                key="seo"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <SEODirectory 
+                  onBack={() => setActiveTab('orders')}
+                  onSelectCategory={() => {}}
+                />
               </motion.div>
             )}
           </AnimatePresence>
