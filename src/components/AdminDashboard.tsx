@@ -2340,7 +2340,11 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                       <h4 className="font-bold text-gray-500 text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1">
                         <Truck size={12} /> نوع الطلب
                       </h4>
-                      <p className="text-sm font-bold text-gray-700">توصيل للمنزل</p>
+                      <p className="text-sm font-bold text-gray-700">
+                        {typeof (selectedOrder as any).shipping_method === 'object' 
+                          ? ((selectedOrder as any).shipping_method?.title || 'توصيل للمنزل')
+                          : ((selectedOrder as any).shipping_method || 'توصيل للمنزل')}
+                      </p>
                       <p className="text-xs text-gray-500">{selectedOrder.billing?.city}, {selectedOrder.billing?.address_1}</p>
                     </div>
                   )}

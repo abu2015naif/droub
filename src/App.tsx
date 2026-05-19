@@ -2610,7 +2610,7 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
                     <div className="mt-6 pt-6 border-t border-gray-50 flex justify-between items-center">
                       <div className="text-xs text-gray-400">
                         <p>طريقة الدفع: {order.payment_method === 'cod' ? 'الدفع عند الاستلام' : 'دفع إلكتروني'}</p>
-                        <p>الشحن: {order.shipping_method}</p>
+                        <p>الشحن: {typeof order.shipping_method === 'object' ? (order.shipping_method?.title || 'شحن') : (order.shipping_method || 'شحن قياسي')}</p>
                       </div>
                       <button className="text-red-600 text-sm font-bold hover:underline">تفاصيل الطلب</button>
                     </div>
