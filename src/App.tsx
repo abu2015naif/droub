@@ -626,6 +626,18 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
 
+  const trackConversion = (orderId: string | number, value: number) => {
+    if (typeof (window as any).gtag === 'function') {
+      (window as any).gtag('event', 'conversion', {
+        'send_to': 'AW-17768691181/u9vzCLCLkMkbEO3r4phC',
+        'value': value,
+        'currency': 'SAR',
+        'transaction_id': orderId.toString()
+      });
+      console.log(`✅ Google Ads Conversion tracked for order ${orderId} with value ${value}`);
+    }
+  };
+
   const toggleFavorite = async (productId: number) => {
     if (!user) {
       setFavorites(prev => {
@@ -719,8 +731,45 @@ export default function App() {
       const totalAmount = cartTotal + shippingCost;
       console.log("💰 Order Total Calculation:", { cartTotal, shippingCost, totalAmount });
 
-      // 1. Create order in WooCommerce via our backend
-      const wcOrderData: any = {
+      console.log("🚀 Prepared Firebase Order Data...");
+      
+      // Prepare Firestore Order Object
+      const normalizedPaymentMethod = (paymentMethod || "").trim().toLowerCase();
+      const fsOrderData: any = {
+        userId: currentUser?.uid || "guest",
+        customerName: `${shippingDetails.firstName || ""} ${shippingDetails.lastName || ""}`.trim() || "عميل",
+        customerEmail: usedEmail || "",
+        customerPhone: shippingDetails.phone || "",
+        items: cart.map(item => ({
+          id: item.id || 0,
+          name: item.name || "",
+          price: item.price || 0,
+          quantity: item.quantity || 0,
+          image: item.images?.[0]?.src || item.image || "",
+          selectedAttributes: item.selectedAttributes ? JSON.parse(JSON.stringify(item.selectedAttributes)) : null
+        })),
+        total: totalAmount,
+        status: (normalizedPaymentMethod === "cod" || normalizedPaymentMethod === "bank_transfer") ? "pending" : "awaiting-payment",
+        billing: {
+          first_name: shippingDetails.firstName || "",
+          last_name: shippingDetails.lastName || "",
+          address_1: shippingDetails.address || "",
+          city: shippingDetails.city || "الرياض",
+          state: shippingDetails.state || "منطقة الرياض",
+          postcode: shippingDetails.postcode || "",
+          country: "SA",
+          email: usedEmail || "",
+          phone: shippingDetails.phone || ""
+        },
+        shipping: {
+          first_name: shippingDetails.firstName || "",
+          last_name: shippingDetails.lastName || "",
+          address_1: shippingDetails.address || "",
+          city: shippingDetails.city || "الرياض",
+          state: shippingDetails.state || "منطقة الرياض",
+          postcode: shippingDetails.postcode || "",
+          country: "SA"
+        },
         payment_method: paymentMethod,
         payment_method_title: paymentMethod === "cod" ? "الدفع عند الاستلام" : 
                              paymentMethod === "bank_transfer" ? "حوالة بنكية" :
@@ -728,249 +777,145 @@ export default function App() {
                              paymentMethod.toLowerCase().includes("tamara") ? "تمارا (Tamara)" :
                              paymentMethod.toLowerCase().includes("tabby") ? "تابي (Tabby)" :
                              "بطاقة مدى / فيزا / ماستر كارد",
-        status: (paymentMethod === "cod" || paymentMethod === "bank_transfer") ? "on-hold" : "pending",
-        set_paid: false,
-        customer_note: extraData?.isCompany ? `طلب لشركة: ${extraData.companyInfo?.name || ""} - ضريبي: ${extraData.companyInfo?.taxNumber || ""} - سجل: ${extraData.companyInfo?.commercialRegister || ""}` : "",
-        billing: {
-          first_name: shippingDetails.firstName || "",
-          last_name: shippingDetails.lastName || "",
-          address_1: shippingDetails.address || "",
-          city: shippingDetails.city || "",
-          state: shippingDetails.state || "Riyadh",
-          postcode: shippingDetails.postcode || "12345",
-          country: "SA",
-          email: currentUser?.email || shippingDetails.email || "",
-          phone: shippingDetails.phone || ""
-        },
-        shipping: {
-          first_name: shippingDetails.firstName || "",
-          last_name: shippingDetails.lastName || "",
-          address_1: shippingDetails.address || "",
-          city: shippingDetails.city || "",
-          state: shippingDetails.state || "Riyadh",
-          postcode: shippingDetails.postcode || "12345",
-          country: "SA"
-        },
-        line_items: cart.map(item => ({
-          product_id: item.id,
-          quantity: item.quantity,
-          total: (parseFloat(item.price.toString()) * item.quantity).toFixed(2),
-          subtotal: (parseFloat(item.price.toString()) * item.quantity).toFixed(2),
-          meta_data: item.selectedAttributes ? Object.entries(item.selectedAttributes).map(([key, value]) => ({
-            key,
-            value: value || ""
-          })) : []
-        })),
-        shipping_lines: selectedShipping ? [
-          {
-            method_id: selectedShipping.method_id,
-            method_title: selectedShipping.method_title,
-            total: shippingCost.toFixed(2)
-          }
-        ] : [],
-        meta_data: [
-          { key: "_order_type", value: extraData?.isPickup ? "pickup" : "shipping" },
-          { key: "_pickup_showroom", value: extraData?.pickupShowroom ? JSON.stringify(extraData.pickupShowroom) : "" },
-          { key: "_is_company", value: extraData?.isCompany ? "yes" : "no" },
-          { key: "_company_name", value: extraData?.companyInfo?.name || "" },
-          { key: "_tax_number", value: extraData?.companyInfo?.taxNumber || "" },
-          { key: "_commercial_register", value: extraData?.companyInfo?.commercialRegister || "" },
-          { key: "_bank_transfer_holder", value: extraData?.bankTransferInfo?.holderName || "" },
-          { key: "_bank_account_details", value: extraData?.bankTransferInfo?.bankAccount ? JSON.stringify(extraData.bankTransferInfo.bankAccount) : "" }
-        ]
+        isCompany: extraData?.isCompany || false,
+        companyInfo: extraData?.companyInfo ? JSON.parse(JSON.stringify(extraData.companyInfo)) : null,
+        pickupShowroom: extraData?.pickupShowroom ? JSON.parse(JSON.stringify(extraData.pickupShowroom)) : null,
+        shipping_method: selectedShipping ? {
+          id: selectedShipping.method_id,
+          title: selectedShipping.method_title,
+          cost: shippingCost
+        } : null,
+        createdAt: new Date().toISOString()
       };
 
-      // If bank transfer, we might want to upload the receipt first
-      if (paymentMethod === "bank_transfer" && extraData?.bankTransferInfo?.receiptUrl) {
-        try {
-          console.log("📡 Preparing bank receipt for upload...");
-          
-          let uploadData = extraData.bankTransferInfo.receiptUrl;
-
-          // 🏗️ Simple client-side compression using Canvas if it's a large image
-          if (uploadData.length > 400000) { // > 400KB
-            try {
-              console.log("🪄 Compressing large receipt image...");
-              const img = new Image();
-              const canvas = document.createElement('canvas');
-              const ctx = canvas.getContext('2d');
-              
-              await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = reject;
-                img.src = uploadData;
-              });
-
-              let width = img.width;
-              let height = img.height;
-              const maxDim = 1000; // Smaller max dimension
-              if (width > maxDim || height > maxDim) {
-                if (width > height) {
-                  height *= maxDim / width;
-                  width = maxDim;
-                } else {
-                  width *= maxDim / height;
-                  height = maxDim;
-                }
-              }
-
-              canvas.width = width;
-              canvas.height = height;
-              ctx?.drawImage(img, 0, 0, width, height);
-              uploadData = canvas.toDataURL('image/jpeg', 0.6); // 60% quality
-              console.log(`✅ Compressed from ${Math.round(extraData.bankTransferInfo.receiptUrl.length/1024)}KB to ${Math.round(uploadData.length/1024)}KB`);
-            } catch (compressErr) {
-              console.warn("⚠️ Compression failed, sending original:", compressErr);
-            }
-          }
-
-          console.log("📡 Uploading bank receipt to media library...");
-          const blob = await (await fetch(uploadData)).blob();
-          const file = new File([blob], `receipt-${Date.now()}.jpg`, { type: 'image/jpeg' });
-          
-          const uploadFormData = new FormData();
-          uploadFormData.append('file', file);
-          
-          const uploadRes = await fetch('/api/media', {
-            method: 'POST',
-            body: uploadFormData
-          });
-          
-          if (uploadRes.ok) {
-            let media;
-            try {
-              const textRes = await uploadRes.text();
-              media = JSON.parse(textRes);
-            } catch (pErr) {
-              console.error("❌ Failed to parse media upload JSON:", pErr);
-              throw new Error("تلقى التطبيق استجابة غير صالحة من السيرفر. قد يكون هناك جدار حماية يمنع الرفع.");
-            }
-            wcOrderData.meta_data.push({ key: "_bank_receipt_url", value: media.source_url });
-            wcOrderData.meta_data.push({ key: "_bank_receipt_id", value: media.id.toString() });
-            console.log("✅ Bank receipt uploaded successfully:", media.source_url);
-          } else {
-            const errorText = await uploadRes.text();
-            console.error("❌ Media upload failed (text response):", errorText);
-            
-            let errorJson = null;
-            try {
-              errorJson = JSON.parse(errorText);
-            } catch (e) {
-              // Not JSON
-            }
-
-            if (errorJson?.is_html) {
-              throw new Error(`خطأ في السيرفر (403): جدار الحماية يمنع رفع الصور. يرجى التواصل مع الإدارة.`);
-            }
-            throw new Error(`Media upload failed: ${uploadRes.status}`);
-          }
-        } catch (uploadErr) {
-          console.error("⚠️ Failed to upload receipt:", uploadErr);
-          // Only fallback if it's not too large, but better to avoid fallback to base64 in metadata if possible
-          if (extraData.bankTransferInfo.receiptUrl.length < 500000) { // < 500KB
-            wcOrderData.meta_data.push({ key: "_bank_receipt_base64", value: extraData.bankTransferInfo.receiptUrl });
-          } else {
-            console.warn("⚠️ Receipt image too large for metadata fallback, skipping.");
-          }
-        }
+      // Handle Bank Receipt for Firestore
+      if (paymentMethod === "bank_transfer" && extraData?.bankTransferInfo) {
+        fsOrderData.bankTransferInfo = {
+          holderName: extraData.bankTransferInfo.holderName || "",
+          bankAccount: extraData.bankTransferInfo.bankAccount || null,
+          hasReceipt: !!extraData.bankTransferInfo.receiptUrl
+        };
+        // We'll add the receipt URL later if it successfully uploads to WC, 
+        // or just rely on the flag for now if we don't want to store huge base64 in Firestore
       }
 
-      console.log("🚀 Prepared WC Order Data:", JSON.stringify(wcOrderData, null, 2));
+      // 1. SAVE TO FIRESTORE FIRST (Primary Source of Truth)
+      console.log(`🔥 Saving order to Firestore for user: ${fsOrderData.userId}...`);
+      const docRef = await addDoc(collection(db, "orders"), fsOrderData);
+      const fsOrderId = docRef.id;
+      console.log(`✅ Order saved to Firestore with ID: ${fsOrderId}`);
 
-      const wcResponse = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(wcOrderData)
-      });
-
-      const wcResText = await wcResponse.text();
-      if (!wcResponse.ok) {
-        let errorData;
-        try {
-          errorData = JSON.parse(wcResText);
-        } catch (e) {
-          console.error("❌ Failed to parse error JSON. Text error:", wcResText);
-          throw new Error(`Server error (${wcResponse.status}): ${wcResText.substring(0, 100)}...`);
-        }
-        console.error("❌ WooCommerce Order Creation Failed:", errorData);
-        throw new Error(errorData.message || errorData.error || "Failed to sync with WooCommerce");
-      }
-
-      let wcOrder;
+      // 2. Sync with WooCommerce (Optional/Background)
+      // As per user request, we prioritize Firebase and manage orders there.
+      // We still try to sync for inventory/payment gateway purposes if needed, but it won't block the FS success.
+      
+      let wcOrder: any = null;
       try {
-        wcOrder = JSON.parse(wcResText);
-      } catch (e) {
-        console.error("❌ Failed to parse success order JSON:", e, wcResText);
-        throw new Error("سجل السيرفر الطلب ولكن الرد كان غير متوقع.");
-      }
-      console.log("✅ WooCommerce Order Created:", wcOrder);
-
-      // 2. Also save to Firestore for local tracking
-      try {
-        // Prepare a safe version of bankTransferInfo for Firestore (remove base64)
-        let safeBankInfo = null;
-        if (extraData?.bankTransferInfo) {
-          safeBankInfo = { ...extraData.bankTransferInfo };
-          // If we have a WooCommerce source URL from the upload step, use it
-          // Otherwise, if it's still base64, remove it to avoid Firestore size limit
-          if (safeBankInfo.receiptUrl && safeBankInfo.receiptUrl.startsWith('data:')) {
-            // We search if we saved the uploaded URL in wcOrderData earlier
-            const uploadedUrlMeta = wcOrderData.meta_data.find((m: any) => m.key === "_bank_receipt_url");
-            if (uploadedUrlMeta) {
-              safeBankInfo.receiptUrl = uploadedUrlMeta.value;
-            } else {
-              delete safeBankInfo.receiptUrl; // Remove huge base64
-              safeBankInfo.hasReceipt = true; // Just a flag
-            }
-          }
-        }
-
-        console.log(`🔥 Saving order to Firestore for user: ${currentUser?.uid || "guest"}...`);
-        
-        const fsOrderData = {
-          userId: currentUser?.uid || "guest",
-          customerName: `${shippingDetails.firstName || ""} ${shippingDetails.lastName || ""}`.trim() || "عميل",
-          customerEmail: usedEmail || "",
-          customerPhone: shippingDetails.phone || "",
-          items: cart.map(item => ({
-            id: item.id || 0,
-            name: item.name || "",
-            price: item.price || 0,
-            quantity: item.quantity || 0,
-            image: item.images?.[0]?.src || item.image || "",
-            selectedAttributes: item.selectedAttributes ? JSON.parse(JSON.stringify(item.selectedAttributes)) : null
-          })),
-          total: parseFloat(wcOrder.total || totalAmount.toString()) || totalAmount,
-          status: 'pending',
-          wcOrderId: wcOrder.id || 0,
-          billing: {
-            ...wcOrderData.billing,
-            email: usedEmail || wcOrderData.billing.email,
-            phone: shippingDetails.phone || wcOrderData.billing.phone
-          },
+        const wcOrderData: any = {
           payment_method: paymentMethod,
-          payment_method_title: wcOrderData.payment_method_title,
-          isCompany: extraData?.isCompany || false,
-          companyInfo: extraData?.companyInfo ? JSON.parse(JSON.stringify(extraData.companyInfo)) : null,
-          pickupShowroom: extraData?.pickupShowroom ? JSON.parse(JSON.stringify(extraData.pickupShowroom)) : null,
-          bankTransferInfo: safeBankInfo,
-          createdAt: new Date().toISOString()
+          payment_method_title: fsOrderData.payment_method_title,
+          status: (paymentMethod === "cod" || paymentMethod === "bank_transfer") ? "on-hold" : "pending",
+          set_paid: false,
+          customer_note: `FS_ORDER_ID: ${fsOrderId}${extraData?.isCompany ? ` | شركة: ${extraData.companyInfo?.name || ""}` : ""}`,
+          billing: fsOrderData.billing,
+          shipping: fsOrderData.shipping,
+          line_items: cart.map(item => ({
+            product_id: item.id,
+            quantity: item.quantity,
+            total: (parseFloat(item.price.toString()) * item.quantity).toFixed(2),
+          })),
+          shipping_lines: selectedShipping ? [
+            {
+              method_id: selectedShipping.method_id,
+              method_title: selectedShipping.method_title,
+              total: shippingCost.toFixed(2)
+            }
+          ] : []
         };
 
-        const docRef = await addDoc(collection(db, "orders"), fsOrderData);
-        console.log(`✅ Order saved to Firestore with ID: ${docRef.id} for UID: ${fsOrderData.userId}`);
-      } catch (fsError) {
-        console.error("⚠️ Firestore Order Save Error (non-blocking):", fsError);
-        // Continue even if Firestore fails to save, as WooCommerce order is already created
+        // If bank transfer, upload receipt to WC and update FS
+        if (paymentMethod === "bank_transfer" && extraData?.bankTransferInfo?.receiptUrl) {
+          try {
+            console.log("📡 Uploading bank receipt...");
+            
+            let uploadData = extraData.bankTransferInfo.receiptUrl;
+            if (uploadData.length > 400000) {
+              try {
+                const img = new Image();
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                await new Promise((resolve) => { img.onload = resolve; img.src = uploadData; });
+                let width = img.width; let height = img.height;
+                const maxDim = 1000;
+                if (width > maxDim || height > maxDim) {
+                  if (width > height) { height *= maxDim / width; width = maxDim; }
+                  else { width *= maxDim / height; height = maxDim; }
+                }
+                canvas.width = width; canvas.height = height;
+                ctx?.drawImage(img, 0, 0, width, height);
+                uploadData = canvas.toDataURL('image/jpeg', 0.6);
+              } catch (e) { console.error("Compression err", e); }
+            }
+
+            const blob = await (await fetch(uploadData)).blob();
+            const file = new File([blob], `receipt-${fsOrderId}.jpg`, { type: 'image/jpeg' });
+            const uploadFormData = new FormData();
+            uploadFormData.append('file', file);
+            const uploadRes = await fetch('/api/media', { method: 'POST', body: uploadFormData });
+            
+            if (uploadRes.ok) {
+              const media = await uploadRes.json();
+              // Update Firestore with the link
+              await updateDoc(doc(db, "orders", fsOrderId), {
+                "bankTransferInfo.receiptUrl": media.source_url,
+                "bankTransferInfo.mediaId": media.id
+              });
+              // Also prepare for WC
+              wcOrderData.meta_data = [
+                { key: "_bank_receipt_url", value: media.source_url },
+                { key: "_bank_receipt_id", value: media.id.toString() }
+              ];
+            }
+          } catch (e) { console.warn("Receipt upload fail", e); }
+        }
+
+        // Perform WC Sync
+        const wcResponse = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(wcOrderData)
+        });
+
+        if (wcResponse.ok) {
+          wcOrder = await wcResponse.json();
+          await updateDoc(doc(db, "orders", fsOrderId), {
+            wcOrderId: wcOrder.id || 0,
+            wcOrderNumber: wcOrder.number || ""
+          });
+        }
+      } catch (wcErr) {
+        console.warn("⚠️ WooCommerce sync failed (continuing with Firebase):", wcErr);
+      }
+
+
+      // Handle External Payments (Tamara/Tabby)
+      // These still require wcOrder.id if they are integrated with WC on the backend
+      // If wcOrder sync failed, we might need to handle this gracefully or inform the user
+      
+      const effectiveOrderId = wcOrder?.id || fsOrderId;
+      
+      // Track conversion for synchronous payments (COD / Bank Transfer)
+      if (paymentMethod === "cod" || paymentMethod === "bank_transfer") {
+        trackConversion(effectiveOrderId, totalAmount);
       }
 
       if (paymentMethod.toLowerCase().includes("tamara")) {
         try {
-          const wcTotal = wcOrder.total;
+          const wcTotal = wcOrder?.total;
           const paymentAmount = (wcTotal && parseFloat(wcTotal) > 0) ? wcTotal : totalAmount.toFixed(2);
           
           console.log("🚀 Initiating Tamara payment:", { 
-            orderId: wcOrder.id, 
+            orderId: effectiveOrderId, 
             amount: paymentAmount,
             wcTotal: wcTotal,
             localTotal: totalAmount.toFixed(2)
@@ -980,9 +925,9 @@ export default function App() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              orderId: wcOrder.id,
+              orderId: effectiveOrderId,
               amount: paymentAmount,
-              currency: wcOrder.currency || "SAR",
+              currency: wcOrder?.currency || "SAR",
               customer: {
                 firstName: shippingDetails.firstName,
                 lastName: shippingDetails.lastName,
@@ -999,8 +944,8 @@ export default function App() {
                 sku: item.sku || item.id.toString()
               })),
               shippingAmount: shippingCost.toFixed(2),
-              returnUrl: `${window.location.origin}?payment=success&order_id=${wcOrder.id}`,
-              cancelUrl: `${window.location.origin}?payment=cancel&order_id=${wcOrder.id}`
+              returnUrl: `${window.location.origin}?payment=success&order_id=${effectiveOrderId}`,
+              cancelUrl: `${window.location.origin}?payment=cancel&order_id=${effectiveOrderId}`
             })
           });
 
@@ -1026,11 +971,11 @@ export default function App() {
 
       if (paymentMethod.toLowerCase().includes("tabby")) {
         try {
-          const wcTotal = wcOrder.total;
+          const wcTotal = wcOrder?.total;
           const paymentAmount = (wcTotal && parseFloat(wcTotal) > 0) ? wcTotal : totalAmount.toFixed(2);
           
           console.log("🚀 Initiating Tabby payment:", { 
-            orderId: wcOrder.id, 
+            orderId: effectiveOrderId, 
             amount: paymentAmount,
             wcTotal: wcTotal,
             localTotal: totalAmount.toFixed(2)
@@ -1040,9 +985,9 @@ export default function App() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              orderId: wcOrder.id,
+              orderId: effectiveOrderId,
               amount: paymentAmount,
-              currency: wcOrder.currency || "SAR",
+              currency: wcOrder?.currency || "SAR",
               customer: {
                 firstName: shippingDetails.firstName,
                 lastName: shippingDetails.lastName,
@@ -1059,8 +1004,8 @@ export default function App() {
                 sku: item.sku || item.id.toString()
               })),
               shippingAmount: shippingCost.toFixed(2),
-              returnUrl: `${window.location.origin}?payment=success&order_id=${wcOrder.id}`,
-              cancelUrl: `${window.location.origin}?payment=cancel&order_id=${wcOrder.id}`
+              returnUrl: `${window.location.origin}?payment=success&order_id=${effectiveOrderId}`,
+              cancelUrl: `${window.location.origin}?payment=cancel&order_id=${effectiveOrderId}`
             })
           });
 
@@ -1087,11 +1032,11 @@ export default function App() {
       if (paymentMethod.toLowerCase().includes("telr") || paymentMethod.toLowerCase().includes("applepay")) {
         try {
           // Fix: If WooCommerce returns '0' as total, use our locally calculated totalAmount
-          const wcTotal = wcOrder.total;
+          const wcTotal = wcOrder?.total;
           const paymentAmount = (wcTotal && parseFloat(wcTotal) > 0) ? wcTotal : totalAmount.toFixed(2);
           
           console.log("🚀 Initiating Telr payment:", { 
-            orderId: wcOrder.id, 
+            orderId: effectiveOrderId, 
             amount: paymentAmount,
             wcTotal: wcTotal,
             localTotal: totalAmount.toFixed(2)
@@ -1101,9 +1046,9 @@ export default function App() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              orderId: wcOrder.id,
+              orderId: effectiveOrderId,
               amount: paymentAmount,
-              currency: wcOrder.currency || "SAR",
+              currency: wcOrder?.currency || "SAR",
               customer: {
                 firstName: shippingDetails.firstName,
                 lastName: shippingDetails.lastName,
@@ -1112,8 +1057,8 @@ export default function App() {
                 address: shippingDetails.address,
                 city: shippingDetails.city
               },
-              returnUrl: `${window.location.origin}?payment=success&order_id=${wcOrder.id}`,
-              cancelUrl: `${window.location.origin}?payment=cancel&order_id=${wcOrder.id}`,
+              returnUrl: `${window.location.origin}?payment=success&order_id=${effectiveOrderId}`,
+              cancelUrl: `${window.location.origin}?payment=cancel&order_id=${effectiveOrderId}`,
               payMethod: "creditcard"
             })
           });
@@ -1210,11 +1155,32 @@ export default function App() {
           if (data.order && data.order.status && data.order.status.code === 3) {
             // Payment successful
             // Update WooCommerce order status
+            const orderRes = await fetch(`/api/orders/${orderId}`);
+            const orderData = await orderRes.json();
+            const orderTotal = parseFloat(orderData.total || "0");
+
             await fetch(`/api/orders/${orderId}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ status: 'processing', set_paid: true })
             });
+
+            // ALSO update Firestore status if we find the matching order
+            try {
+              const fsOrderQuery = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
+              const fsOrderSnap = await getDocs(fsOrderQuery);
+              if (!fsOrderSnap.empty) {
+                await updateDoc(doc(db, "orders", fsOrderSnap.docs[0].id), { 
+                  status: 'processing',
+                  paidAt: new Date().toISOString()
+                });
+              }
+            } catch (fsErr) {
+              console.error("Error updating FS status in Telr check:", fsErr);
+            }
+
+            trackConversion(orderId, orderTotal);
+
             alert("تمت عملية الدفع بنجاح! شكراً لتسوقكم.");
             setCart([]);
             window.history.replaceState({}, document.title, "/");
@@ -1231,11 +1197,32 @@ export default function App() {
       // Direct return from Telr success
       const finalizeSuccess = async () => {
         try {
+          const orderRes = await fetch(`/api/orders/${orderId}`);
+          const orderData = await orderRes.json();
+          const orderTotal = parseFloat(orderData.total || "0");
+
           await fetch(`/api/orders/${orderId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'processing', set_paid: true })
           });
+
+          // ALSO update Firestore status if we find the matching order
+          try {
+            const fsOrderQuery = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
+            const fsOrderSnap = await getDocs(fsOrderQuery);
+            if (!fsOrderSnap.empty) {
+              await updateDoc(doc(db, "orders", fsOrderSnap.docs[0].id), { 
+                status: 'processing',
+                paidAt: new Date().toISOString()
+              });
+            }
+          } catch (fsErr) {
+            console.error("Error updating FS status in Telr finalize:", fsErr);
+          }
+
+          trackConversion(orderId, orderTotal);
+
           alert("تمت عملية الدفع بنجاح! شكراً لتسوقكم.");
           setCart([]);
           window.history.replaceState({}, document.title, "/");
@@ -2478,6 +2465,7 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
       case 'completed': return 'bg-green-100 text-green-700';
       case 'processing': return 'bg-blue-100 text-blue-700';
       case 'pending': return 'bg-yellow-100 text-yellow-700';
+      case 'awaiting-payment': return 'bg-orange-100 text-orange-700';
       case 'cancelled': return 'bg-red-100 text-red-700';
       default: return 'bg-gray-100 text-gray-700';
     }
@@ -2488,6 +2476,7 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
       case 'completed': return 'مكتمل';
       case 'processing': return 'قيد التنفيذ';
       case 'pending': return 'قيد الانتظار';
+      case 'awaiting-payment': return 'بانتظار الدفع';
       case 'cancelled': return 'ملغي';
       default: return status;
     }

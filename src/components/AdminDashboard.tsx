@@ -23,7 +23,9 @@ import {
   MessageCircle,
   FileText,
   Home,
-  Flame
+  Flame,
+  AlertTriangle,
+  AlertCircle
 } from "lucide-react";
 import { db, collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, query, where, getDocs, handleFirestoreError, OperationType, setDoc, getDoc } from "../firebase";
 import { Product, Showroom, BankDetails, Employee } from "../types";
@@ -138,6 +140,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   const [isEditingEmployee, setIsEditingEmployee] = useState<Employee | null>(null);
   const [isAddingEmployee, setIsAddingEmployee] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [orderStatusFilter, setOrderStatusFilter] = useState<'all' | 'pending' | 'processing' | 'completed' | 'cancelled' | 'awaiting-payment'>('all');
   const [editingType, setEditingType] = useState('simple');
   const [loading, setLoading] = useState(false);
   const [productImageFile, setProductImageFile] = useState<File | null>(null);
@@ -982,7 +985,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                 >
                   <ClipboardList size={20} />
                   <span className="font-bold">الطلبات</span>
-                  <span className="mr-auto bg-white/20 px-2 py-0.5 rounded-full text-xs">{orders.length}</span>
+                  <span className="mr-auto bg-white/20 px-2 py-0.5 rounded-full text-xs">{orders.filter(o => o.status !== 'awaiting-payment').length}</span>
                 </button>
               )}
               {hasPermission('products') && (
@@ -1076,16 +1079,51 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-6"
               >
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <h3 className="text-2xl font-bold">إدارة الطلبات</h3>
-                  <button 
-                    onClick={() => { /* Real-time via onSnapshot */ }}
-                    className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
-                    title="تحديث تلقائي"
-                  >
-                    <Clock size={20} className={loading ? "animate-spin" : ""} />
-                  </button>
+                  <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                    {[
+                      { id: 'all', label: 'الكل' },
+                      { id: 'pending', label: 'قيد الانتظار' },
+                      { id: 'awaiting-payment', label: 'بانتظار الدفع' },
+                      { id: 'processing', label: 'قيد التنفيذ' },
+                      { id: 'completed', label: 'مكتمل' },
+                      { id: 'cancelled', label: 'ملغي' }
+                    ].map(filter => (
+                      <button
+                        key={filter.id}
+                        onClick={() => setOrderStatusFilter(filter.id as any)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          orderStatusFilter === filter.id 
+                            ? 'bg-red-600 text-white shadow-md' 
+                            : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'
+                        }`}
+                      >
+                        {filter.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
+                {orders.some(o => o.status === 'awaiting-payment') && (
+                  <div className="bg-orange-50 border border-orange-200 p-4 rounded-2xl flex items-start gap-3">
+                    <div className="p-2 bg-orange-100 rounded-lg text-orange-600">
+                      <AlertTriangle size={20} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-orange-800 text-sm">لديك طلبات معلقة بانتظار الدفع</h4>
+                      <p className="text-xs text-orange-700 mt-1">
+                        هناك {orders.filter(o => o.status === 'awaiting-payment').length} طلب لم يكمل أصحابها عملية الدفع الإلكتروني (تمارا/تابي/بطاقة). لا تقم بشحنها حتى تتغير حالتها تلقائياً أو تتأكد من وصول المبلغ.
+                      </p>
+                      <button 
+                        onClick={() => setOrderStatusFilter('awaiting-payment')}
+                        className="text-orange-800 font-bold text-[10px] mt-2 underline"
+                      >
+                        عرض هذه الطلبات فقط
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
                   <table className="w-full text-right">
@@ -1099,21 +1137,32 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {orders.length > 0 ? orders.map(order => (
+                      {(orderStatusFilter === 'all' ? orders : orders.filter(o => o.status === orderStatusFilter)).length > 0 ? (orderStatusFilter === 'all' ? orders : orders.filter(o => o.status === orderStatusFilter)).map(order => (
                         <tr key={order.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4 font-mono text-sm">#{order.id}</td>
                           <td className="px-6 py-4">{order.customerName}</td>
-                          <td className="px-6 py-4 font-bold text-red-700">{order.total} ر.س</td>
+                          <td className="px-6 py-4 font-bold text-red-700">
+                            {order.total} ر.س
+                            {order.status === 'awaiting-payment' && (
+                              <div className="flex items-center gap-1 text-[10px] text-orange-600 bg-orange-50 px-2 py-1 rounded-lg mt-1 border border-orange-100 font-medium">
+                                <AlertCircle size={10} />
+                                لم يكتمل الدفع الإلكتروني
+                              </div>
+                            )}
+                          </td>
                           <td className="px-6 py-4">
                             <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                               order.status === 'completed' ? 'bg-green-100 text-green-700' :
-                              ['processing', 'on-hold'].includes(order.status) ? 'bg-blue-100 text-blue-700' :
+                              order.status === 'awaiting-payment' ? 'bg-orange-100 text-orange-700' :
+                              ['processing'].includes(order.status) ? 'bg-blue-100 text-blue-700' :
+                              ['pending', 'on-hold'].includes(order.status) ? 'bg-yellow-100 text-yellow-700' :
                               ['cancelled', 'failed', 'refunded'].includes(order.status) ? 'bg-red-100 text-red-700' :
-                              'bg-yellow-100 text-yellow-700'
+                              'bg-gray-100 text-gray-700'
                             }`}>
                               {order.status === 'completed' ? 'مكتمل' :
+                               order.status === 'awaiting-payment' ? 'بانتظار الدفع' :
                                order.status === 'processing' ? 'قيد التنفيذ' :
-                               order.status === 'on-hold' ? 'قيد الانتظار' :
+                               ['pending', 'on-hold'].includes(order.status) ? 'قيد الانتظار' :
                                order.status === 'cancelled' ? 'ملغي' : 
                                order.status === 'failed' ? 'فشل' :
                                order.status === 'refunded' ? 'مسترجع' : 'جديد'}
@@ -2203,13 +2252,16 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                       <span className="text-sm font-bold text-gray-500">الحالة الحالية:</span>
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                         selectedOrder.status === 'completed' ? 'bg-green-100 text-green-700' :
-                        ['processing', 'on-hold'].includes(selectedOrder.status) ? 'bg-blue-100 text-blue-700' :
+                        selectedOrder.status === 'awaiting-payment' ? 'bg-orange-100 text-orange-700' :
+                        ['processing'].includes(selectedOrder.status) ? 'bg-blue-100 text-blue-700' :
+                        ['pending', 'on-hold'].includes(selectedOrder.status) ? 'bg-yellow-100 text-yellow-700' :
                         ['cancelled', 'failed', 'refunded'].includes(selectedOrder.status) ? 'bg-red-100 text-red-700' :
-                        'bg-yellow-100 text-yellow-700'
+                        'bg-gray-100 text-gray-700'
                       }`}>
                         {selectedOrder.status === 'completed' ? 'مكتمل' :
+                         selectedOrder.status === 'awaiting-payment' ? 'بانتظار الدفع' :
                          selectedOrder.status === 'processing' ? 'قيد التنفيذ' :
-                         selectedOrder.status === 'on-hold' ? 'قيد الانتظار' :
+                         ['pending', 'on-hold'].includes(selectedOrder.status) ? 'قيد الانتظار' :
                          selectedOrder.status === 'cancelled' ? 'ملغي' : 
                          selectedOrder.status === 'failed' ? 'فشل' :
                          selectedOrder.status === 'refunded' ? 'مسترجع' : 'جديد'}
@@ -2223,6 +2275,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                         onChange={(e) => updateOrderStatus(selectedOrder.id, e.target.value as any)}
                         className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500"
                       >
+                        <option value="awaiting-payment">بانتظار الدفع (Awaiting Payment)</option>
                         <option value="pending">قيد الانتظار (Pending)</option>
                         <option value="processing">قيد التنفيذ (Processing)</option>
                         <option value="on-hold">في الانتظار (On Hold)</option>
@@ -2240,7 +2293,14 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
 
                     <div className="pt-4 border-t border-gray-200 flex justify-between items-center">
                       <span className="font-bold text-gray-500">الإجمالي:</span>
-                      <span className="text-2xl font-black text-red-700">{selectedOrder.total} ر.س</span>
+                      <div className="text-right">
+                        <span className="text-2xl font-black text-red-700 block">{selectedOrder.total} ر.س</span>
+                        {selectedOrder.status === 'awaiting-payment' && (
+                          <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-md border border-orange-200">
+                            ⚠️ تنبيه: العميل فتح صفحة الدفع ولم يكمل العملية بنجاح حتى الآن.
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
