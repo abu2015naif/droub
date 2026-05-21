@@ -1116,6 +1116,20 @@ export default function App() {
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
+    const pageParam = urlParams.get('page') || urlParams.get('tab');
+    if (pageParam === 'returns' || pageParam === 'returns-policy' || pageParam === 'return-policy') {
+      setActiveTab('returns');
+    } else if (pageParam === 'seo' || pageParam === 'seo-directory') {
+      setActiveTab('seo-directory');
+    } else if (pageParam === 'shop') {
+      setActiveTab('shop');
+    } else if (pageParam === 'profile') {
+      setActiveTab('profile');
+    }
+  }, []);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
     const productId = urlParams.get('product') || urlParams.get('p');
     
     if (productId) {
