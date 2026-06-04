@@ -17,6 +17,8 @@ import {
   MapPin, 
   ChevronRight, 
   ChevronLeft,
+  ChevronDown,
+  HelpCircle,
   ShieldCheck,
   CheckCircle,
   Flame,
@@ -138,6 +140,7 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"home" | "shop" | "admin" | "checkout" | "profile" | "returns" | "seo-directory">("home");
+  const [activeFaq, setActiveFaq] = useState<number | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [shippingMethods, setShippingMethods] = useState<any[]>([]);
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -1897,6 +1900,34 @@ export default function App() {
               )}
             </section>
 
+            {/* Free Delivery Announcement Banner */}
+            <section className="bg-gradient-to-r from-red-50 via-white to-red-50 border-b border-red-100 py-5 shadow-sm">
+              <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex flex-col md:flex-row items-center gap-4 text-center md:text-right">
+                  <div className="bg-red-600 text-white p-3 rounded-2xl animate-bounce shadow-md shadow-red-100">
+                    <Truck size={28} className="rtl:scale-x-[-1]" />
+                  </div>
+                  <div>
+                    <span className="inline-block bg-red-100 text-red-700 text-xs font-bold px-2.5 py-0.5 rounded-full mb-1">عرض خاص</span>
+                    <h3 className="text-lg md:text-2xl font-black text-gray-900 leading-tight">
+                      من أجلكم.. التوصيل مجاناً عند الشراء بـ <span className="text-red-600">250 ريال</span> وما فوق!
+                    </h3>
+                    <p className="text-xs md:text-sm text-gray-500 font-medium mt-1">
+                      تسوق أفضل أدوات ومعدات السلامة المهنية ومكافحة الحريق واحصل على شحن سريع ومجاني لباب منزلك أو منشأتك.
+                    </p>
+                  </div>
+                </div>
+                <div className="w-full md:w-auto">
+                  <button 
+                    onClick={() => setActiveTab("shop")}
+                    className="w-full md:w-auto text-center bg-red-600 hover:bg-red-700 text-white font-bold px-8 py-3.5 rounded-xl text-base transition-all hover:shadow-lg hover:shadow-red-200"
+                  >
+                    ابدأ التسوق الآن
+                  </button>
+                </div>
+              </div>
+            </section>
+
             {/* Scrolling Categories Bar */}
             <section className="bg-white border-b border-gray-100 py-8 overflow-hidden">
               <div className="max-w-7xl mx-auto px-4">
@@ -2067,6 +2098,81 @@ export default function App() {
                       <p className="text-gray-500">{f.desc}</p>
                     </motion.div>
                   ))}
+                </div>
+              </div>
+            </section>
+
+            {/* FAQ Q&A Section */}
+            <section className="py-20 bg-white border-t border-gray-100">
+              <div className="max-w-4xl mx-auto px-4">
+                <div className="text-center mb-16">
+                  <span className="text-red-600 font-extrabold text-sm tracking-wider px-3 py-1 bg-red-50 rounded-full">الأسئلة الشائعة</span>
+                  <h2 className="text-3xl md:text-4xl font-black text-gray-900 mt-4 mb-3">هل لديك أي استفسار ؟</h2>
+                  <p className="text-gray-500 max-w-2xl mx-auto text-sm md:text-base">
+                    اكتشف كافة التفاصيل المتعلقة بخدماتنا، سياسة الشحن والتوصيل، خيارات التقسيط، وفواتير الشركات.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {[
+                    {
+                      q: "هل تقدمون خدمة التركيب ؟",
+                      ans: "لا، حيث أننا مختصون بالتوريد بأسعار تنافسية للغاية لضمان تزويدكم بأعلى جودة بمختلف معدات وأدوات السلامة ومكافحة الحريق بأقل التكاليف."
+                    },
+                    {
+                      q: "ما هى سياسية التوصيل الخاصة بكم ؟",
+                      ans: "نقدم خدمة التوصيل لمعظم مناطق المملكة ورسوم التوصيل مجانية فى حالة الشراء باكثر من 250ريال وداخل الرياض يكون التوصيل فى نفس اليوم الخيار الأسرع والأنسب لكم."
+                    },
+                    {
+                      q: "ماذا افعل اذا كان المنتج غير متوفر ؟",
+                      ans: "يمكنك التواصل معنا مباشرة ونحن نوفر جميع طلباتك من خلال تأمينها عبر موردينا وشبكة شركائنا المعتمدين."
+                    },
+                    {
+                      q: "هل توفران خيارات التقسيط ؟",
+                      ans: "نعم، لديك سياسة التقسيط على تابي وتمارة بدون أي فوائد أو رسوم عليك لتسهيل عملية الشراء لعملائنا الكرام."
+                    },
+                    {
+                      q: "هل لديكم عروض اسعار وفواتير للشركات ؟",
+                      ans: "نعم وبكل تأكيد، لدينا فى مؤسسة دروب السلامة للتجارة فواتير ضريبية معتمدة لكل المنتجات، كما يسعدنا تقديم عروض أسعار تنافسية تلائم كافة احتياجات مشاريعكم."
+                    }
+                  ].map((faq, idx) => {
+                    const isOpen = activeFaq === idx;
+                    return (
+                      <div 
+                        key={idx} 
+                        className="bg-gray-50 border border-gray-100 rounded-2xl overflow-hidden shadow-sm transition-all duration-300"
+                      >
+                        <button
+                          onClick={() => setActiveFaq(isOpen ? null : idx)}
+                          className="w-full text-right px-6 py-5 flex items-center justify-between gap-4 font-bold text-gray-900 hover:bg-gray-100/50 transition-colors"
+                        >
+                          <span className="text-base md:text-lg flex items-start gap-3">
+                            <span className="text-red-600 font-extrabold shrink-0">س /</span>
+                            <span>{faq.q}</span>
+                          </span>
+                          <span className={`p-1.5 rounded-lg bg-white shadow-sm text-gray-500 shrink-0 transition-transform duration-300 ${isOpen ? 'rotate-180 text-red-600' : ''}`}>
+                            <ChevronDown size={18} />
+                          </span>
+                        </button>
+                        
+                        <AnimatePresence initial={false}>
+                          {isOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.25, ease: "easeInOut" }}
+                            >
+                              <div className="px-6 pb-6 pt-2 border-t border-gray-100/60 text-gray-600 text-sm md:text-base leading-relaxed flex gap-3">
+                                <span className="text-red-500 font-extrabold shrink-0">ج /</span>
+                                <p className="font-medium text-gray-700">{faq.ans}</p>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </section>

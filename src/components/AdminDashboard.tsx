@@ -378,14 +378,32 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
 
   const fetchProducts = async () => {
     try {
-      const response = await fetch("/api/products?per_page=100");
-      const data = await response.json();
-      if (Array.isArray(data)) {
-        const processedData = data.map(p => ({
+      let allProducts: any[] = [];
+      let page = 1;
+      let hasMoreProducts = true;
+      
+      while (hasMoreProducts && page <= 10) {
+        const response = await fetch(`/api/products?per_page=100&page=${page}`);
+        const data = await response.json();
+        
+        if (Array.isArray(data) && data.length > 0) {
+          allProducts = [...allProducts, ...data];
+          if (data.length < 100) {
+            hasMoreProducts = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMoreProducts = false;
+        }
+      }
+      
+      if (allProducts.length > 0) {
+        const processedData = allProducts.map(p => ({
           ...p,
           featured: isFeatured(p)
         }));
-        console.log("📡 Products fetched:", processedData.length, "items. Sample featured status:", processedData[0]?.featured);
+        console.log("📡 Products fetched total:", processedData.length, "items.");
         
         // Deduplicate to avoid key collisions in list rendering
         const uniqueProducts = processedData.filter((p, index, self) => 
@@ -393,7 +411,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
         );
         setProducts(uniqueProducts);
       } else {
-        console.error("Products data is not an array:", data);
+        console.log("No products fetched.");
         setProducts([]);
       }
     } catch (error) {

@@ -257,7 +257,9 @@ async function startServer() {
   app.get(["/api/products", "/products"], async (req, res) => {
     try {
       const { per_page = 20, page = 1, category, search, featured, orderby, order } = req.query;
-      const cacheKey = `products-${per_page}-${page}-${category || 'all'}-${search || 'none'}-${featured || 'all'}-${orderby || 'date'}-${order || 'desc'}`;
+      const parsedPerPage = Math.min(parseInt(per_page as string, 10) || 20, 100);
+      const parsedPage = parseInt(page as string, 10) || 1;
+      const cacheKey = `products-${parsedPerPage}-${parsedPage}-${category || 'all'}-${search || 'none'}-${featured || 'all'}-${orderby || 'date'}-${order || 'desc'}`;
       
       const cachedData = getCachedData(cacheKey);
       if (cachedData) {
@@ -266,8 +268,8 @@ async function startServer() {
       }
 
       const response = await WooCommerce.get("products", {
-        per_page,
-        page,
+        per_page: parsedPerPage,
+        page: parsedPage,
         category,
         search,
         featured: featured === 'true' ? true : undefined,
