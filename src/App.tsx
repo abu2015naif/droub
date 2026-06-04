@@ -247,6 +247,112 @@ export default function App() {
     localStorage.setItem("favorites", JSON.stringify(favorites));
   }, [favorites]);
 
+  const cartTotal = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
+
+  // Real-time Telemetry and Analytics Pipeline
+  const recordProductEvent = async (product: Product, eventType: "view" | "click" | "cart") => {
+    try {
+      const prodRef = doc(db, "product_telemetry", String(product.id));
+      const getSnap = await getDoc(prodRef);
+      
+      let views = 0;
+      let clicks = 0;
+      let cartAdds = 0;
+      
+      if (getSnap.exists()) {
+        const data = getSnap.data();
+        views = data.viewsCount || 0;
+        clicks = data.clicksCount || 0;
+        cartAdds = data.cartAdditionsCount || 0;
+      }
+      
+      await setDoc(prodRef, {
+        id: String(product.id),
+        name: product.name,
+        categoryName: product.categories && product.categories[0] ? product.categories[0].name : "أخرى",
+        viewsCount: views + (eventType === "view" ? 1 : 0),
+        clicksCount: clicks + (eventType === "click" ? 1 : 0),
+        cartAdditionsCount: cartAdds + (eventType === "cart" ? 1 : 0)
+      }, { merge: true });
+    } catch (err) {
+      console.warn("Product telemetry sync failed:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // Generate unique session ID
+    let sessId = sessionStorage.getItem("telemetry_session_id");
+    if (!sessId) {
+      sessId = "sess_" + Math.random().toString(36).substring(2, 11);
+      sessionStorage.setItem("telemetry_session_id", sessId);
+    }
+
+    const device = window.innerWidth < 768 ? "جوال" : "كمبيوتر مكتبي";
+
+    const syncSession = async (extra = {}) => {
+      try {
+        const sessRef = doc(db, "telemetry_sessions", sessId!);
+        const rawCartItems = cart.map(item => ({
+          id: item.id,
+          name: item.name,
+          price: parseFloat(item.price) || 0,
+          quantity: item.quantity
+        }));
+        
+        await setDoc(sessRef, {
+          id: sessId,
+          userId: user?.uid || "guest",
+          email: user?.email || "زائر مجهول",
+          createdAt: sessionStorage.getItem("telemetry_created_at") || new Date().toISOString(),
+          lastActiveAt: new Date().toISOString(),
+          currentPage: activeTab === "home" ? "الرئيسية" : activeTab === "shop" ? "المتجر" : activeTab === "checkout" ? "الدفع" : activeTab === "profile" ? "الملف الشخصي" : activeTab,
+          currentProduct: selectedProduct ? selectedProduct.name : "",
+          cartItems: rawCartItems,
+          cartTotal: cartTotal,
+          device,
+          ...extra
+        }, { merge: true });
+
+        if (!sessionStorage.getItem("telemetry_created_at")) {
+          sessionStorage.setItem("telemetry_created_at", new Date().toISOString());
+        }
+      } catch (err) {
+        console.warn("Session tracking sync failed (rules/offline):", err);
+      }
+    };
+
+    // Initial and periodic updates
+    syncSession();
+    
+    // Heartbeat every 15 seconds
+    const interval = setInterval(() => {
+      syncSession();
+    }, 15000);
+
+    // Click tracking incrementor local storage
+    const trackClick = () => {
+      const clickCount = parseInt(sessionStorage.getItem("telemetry_clicks") || "0") + 1;
+      sessionStorage.setItem("telemetry_clicks", clickCount.toString());
+      syncSession({ clicksCount: clickCount });
+    };
+
+    window.addEventListener("click", trackClick);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("click", trackClick);
+    };
+  }, [user, activeTab, selectedProduct, cart, cartTotal]);
+
+  // Record viewed/clicked products on load
+  useEffect(() => {
+    if (selectedProduct) {
+      recordProductEvent(selectedProduct, "view");
+    }
+  }, [selectedProduct]);
+
   useEffect(() => {
     const homeSettingsRef = doc(db, "settings", "home");
     const unsubHomeSettings = onSnapshot(homeSettingsRef, (snapshot) => {
@@ -589,6 +695,7 @@ export default function App() {
   }, [products, isUsingSampleData, sortBy, sortOrder]);
 
   const addToCart = (product: Product, selectedAttributes?: { [key: string]: string }, variation?: any) => {
+    recordProductEvent(product, "cart");
     setCart(prev => {
       const existing = prev.find(item => 
         item.id === product.id && 
@@ -633,8 +740,6 @@ export default function App() {
       return item;
     }));
   };
-
-  const cartTotal = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
 
   const trackConversion = (orderId: string | number, value: number) => {
     if (typeof (window as any).gtag === 'function') {

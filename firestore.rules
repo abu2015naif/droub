@@ -104,5 +104,15 @@ service cloud.firestore {
       allow read: if true;
       allow write: if hasPermission('settings');
     }
+
+    match /telemetry_sessions/{sessionId} {
+      allow read: if hasPermission('settings');
+      allow write: if true;
+    }
+
+    match /product_telemetry/{productId} {
+      allow read: if true;
+      allow write: if true;
+    }
   }
 }

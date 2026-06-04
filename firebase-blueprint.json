@@ -101,6 +101,39 @@
       },
       "required": ["bankName", "accountName", "accountNumber", "iban", "active"]
     },
+    "TelemetrySession": {
+      "title": "TelemetrySession",
+      "description": "Real-time user session for metrics and active cart tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastActiveAt": { "type": "string", "format": "date-time" },
+        "currentPage": { "type": "string" },
+        "currentProduct": { "type": "string" },
+        "cartItems": { "type": "array" },
+        "cartTotal": { "type": "number" },
+        "clicksCount": { "type": "number" },
+        "device": { "type": "string" }
+      },
+      "required": ["id", "createdAt", "lastActiveAt"]
+    },
+    "ProductTelemetry": {
+      "title": "ProductTelemetry",
+      "description": "Accumulated view and click performance per product",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "categoryName": { "type": "string" },
+        "viewsCount": { "type": "number" },
+        "clicksCount": { "type": "number" },
+        "cartAdditionsCount": { "type": "number" }
+      },
+      "required": ["id", "name"]
+    },
     "Settings": {
       "title": "Settings",
       "description": "Global application settings (e.g., bank details)",
@@ -149,6 +182,14 @@
     "/settings/{settingId}": {
       "schema": "Settings",
       "description": "App settings"
+    },
+    "/telemetry_sessions/{sessionId}": {
+      "schema": "TelemetrySession",
+      "description": "User sessions for tracking activity and current carts"
+    },
+    "/product_telemetry/{productId}": {
+      "schema": "ProductTelemetry",
+      "description": "Track views and clicks for product-specific metrics"
     }
   }
 }
