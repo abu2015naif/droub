@@ -167,6 +167,12 @@ export default function App() {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [paymentGateways, setPaymentGateways] = useState<any[]>([]);
   const [loadingGateways, setLoadingGateways] = useState(true);
+  const [paymentSuccessOrder, setPaymentSuccessOrder] = useState<{ 
+    orderId: string; 
+    total: number; 
+    method: string; 
+    isNewAccount?: boolean;
+  } | null>(null);
 
   const isGatewayEnabled = (id: string) => {
     const searchId = id.toLowerCase();
@@ -1209,11 +1215,12 @@ export default function App() {
       }
 
       setCart([]);
-      setActiveTab("profile");
-      const successMsg = !user ? 
-        `تم استلام طلبك بنجاح! رقم الطلب: #${wcOrder.id}. لقد تم إنشاء حساب لك وإرسال رابط تعيين كلمة المرور لبريدك الإلكتروني. يمكنك رؤية طلبك في قسم "حسابي".` :
-        `تم استلام طلبك بنجاح! رقم الطلب: #${wcOrder.id}. يمكنك متابعة حالة الطلب من قسم "حسابي".`;
-      alert(successMsg);
+      setPaymentSuccessOrder({
+        orderId: wcOrder?.id || fsOrderId || "طلبك",
+        total: totalAmount,
+        method: paymentMethod === "cod" ? "cod" : (paymentMethod === "bank_transfer" ? "bank" : "online"),
+        isNewAccount: !user
+      });
     } catch (error: any) {
       console.error("Checkout error:", error);
       alert(error.message || "حدث خطأ أثناء إتمام الطلب. يرجى المحاولة مرة أخرى.");
@@ -1331,8 +1338,13 @@ export default function App() {
 
             trackConversion(orderId, orderTotal || 0);
 
-            alert("تمت عملية الدفع بنجاح! شكراً لتسوقكم.");
             setCart([]);
+            setPaymentSuccessOrder({
+              orderId: orderId,
+              total: orderTotal || 0,
+              method: 'online',
+              isNewAccount: !user
+            });
             window.history.replaceState({}, document.title, "/");
           } else {
             alert("فشلت عملية الدفع أو تم إلغاؤها.");
@@ -1394,8 +1406,13 @@ export default function App() {
 
           trackConversion(orderId, orderTotal || 0);
 
-          alert("تمت عملية الدفع بنجاح! شكراً لتسوقكم.");
           setCart([]);
+          setPaymentSuccessOrder({
+            orderId: orderId,
+            total: orderTotal || 0,
+            method: 'online',
+            isNewAccount: !user
+          });
           window.history.replaceState({}, document.title, "/");
         } catch (error) {
           console.error("Error finalizing success payment:", error);
@@ -2527,6 +2544,116 @@ export default function App() {
           }
         }}
       />
+
+      {/* Payment Success Modal */}
+      <AnimatePresence>
+        {paymentSuccessOrder && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4 text-slate-800"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-gray-100 relative text-right"
+              style={{ direction: 'rtl' }}
+            >
+              {/* Decorative top colored bar */}
+              <div className="h-2 bg-gradient-to-r from-red-600 via-emerald-500 to-red-600" />
+              
+              <div className="p-8 text-center flex flex-col items-center">
+                
+                {/* Checkmark Animation Hub */}
+                <div className="relative mb-6">
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: [0, 1.2, 1] }}
+                    transition={{ duration: 0.5, ease: "easeOut" }}
+                    className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600"
+                  >
+                    <CheckCircle size={48} className="stroke-[2.5]" />
+                  </motion.div>
+                  <motion.div
+                    animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute -inset-2 border-2 border-emerald-500/20 rounded-full -z-10"
+                  />
+                </div>
+
+                {/* Main Success Title */}
+                <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-2">
+                  تم إرسال طلبك بنجاح!
+                </h3>
+                
+                <p className="text-sm text-gray-500 mb-6 max-w-xs leading-relaxed">
+                  شكراً لتسوقكم من مؤسسة دروب السلامة. تم استلام قيمة الطلب بنجاح وهو الآن قيد المراجعة والتنفيذ.
+                </p>
+
+                {/* Details Card */}
+                <div className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 sm:p-5 mb-6 text-right space-y-3.5">
+                  <div className="flex justify-between items-center text-sm border-b border-gray-200/60 pb-2.5">
+                    <span className="text-gray-500">رقم الطلب:</span>
+                    <span className="font-extrabold text-red-600 font-mono tracking-wider">#{paymentSuccessOrder.orderId}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center text-sm border-b border-gray-200/60 pb-2.5">
+                    <span className="text-gray-500 flex-1">المبلغ المطلوب/المدفوع:</span>
+                    <span className="font-black text-slate-900 text-lg">{paymentSuccessOrder.total.toFixed(2)} ر.س</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500">طريقة الدفع:</span>
+                    <span className="font-bold text-gray-800">
+                      {paymentSuccessOrder.method === 'cod' ? 'الدفع عند الاستلام' : 
+                       paymentSuccessOrder.method === 'bank' ? 'حوالة بنكية وبانتظار التأكيد' : 
+                       'دفع إلكتروني آمن'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Create Account Notification */}
+                {paymentSuccessOrder.isNewAccount && (
+                  <div className="bg-blue-50/60 border border-blue-100/60 rounded-xl p-3.5 mb-6 text-right flex gap-3">
+                    <div className="text-blue-600 mt-0.5 shrink-0"><ShieldCheck size={18} /></div>
+                    <p className="text-xs text-blue-800 leading-relaxed font-semibold">
+                      لقد قمنا بإنشاء حساب لك تلقائياً لتتمكن من متابعة حالة الطلب. تم إرسال رابط تعيين كلمة المرور إلى بريدك الإلكتروني بنجاح.
+                    </p>
+                  </div>
+                )}
+
+                {/* Buttons Grid */}
+                <div className="grid grid-cols-2 gap-3 w-full">
+                  <button
+                    onClick={() => {
+                      setPaymentSuccessOrder(null);
+                      setActiveTab("profile");
+                    }}
+                    className="flex-1 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-extrabold py-3.5 px-2 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-red-500/10 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <User size={16} />
+                    <span>متابعة في حسابي</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setPaymentSuccessOrder(null);
+                      setActiveTab("home");
+                    }}
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 border border-gray-200/50 font-bold py-3.5 px-2 rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <ShoppingBag size={16} />
+                    <span>العودة للمتجر</span>
+                  </button>
+                </div>
+
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Mobile Bottom Navigation */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-2 py-2 flex justify-around items-center z-50 shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
