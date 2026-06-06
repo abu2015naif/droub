@@ -559,6 +559,49 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     return () => unsubBankAccounts();
   }, []);
 
+  // Self-healing check for any order stuck in 'awaiting-payment' status (sync with WooCommerce)
+  useEffect(() => {
+    if (!orders || orders.length === 0) return;
+
+    const pendingSyncOrders = orders.filter(
+      o => o.status === 'awaiting-payment' && o.wcOrderId && !isNaN(Number(o.wcOrderId))
+    );
+
+    if (pendingSyncOrders.length === 0) return;
+
+    const syncCheckedObj = (window as any).__syncCheckedOrders || {};
+
+    pendingSyncOrders.forEach(async (order) => {
+      const orderIdKey = order.id;
+      // Throttling: only check once every 30 seconds per order to avoid rate limits
+      if (syncCheckedObj[orderIdKey] && Date.now() - syncCheckedObj[orderIdKey] < 30000) {
+        return;
+      }
+
+      syncCheckedObj[orderIdKey] = Date.now();
+      (window as any).__syncCheckedOrders = syncCheckedObj;
+
+      try {
+        console.log(`📡 Background syncing WooCommerce status for Order #${order.id} (WC #${order.wcOrderId})...`);
+        const res = await fetch(`/api/orders/${order.wcOrderId}`);
+        if (res.ok) {
+          const wcOrderData = await res.json();
+          const wcStatus = wcOrderData.status; // e.g. 'processing', 'completed', etc.
+
+          if (wcStatus && wcStatus !== 'pending' && wcStatus !== 'awaiting-payment') {
+            console.log(`🔄 Automatically updating Firestore Order #${order.id} status to match WooCommerce status '${wcStatus}'`);
+            await updateDoc(doc(db, "orders", order.id), {
+              status: wcStatus === 'on-hold' ? 'pending' : wcStatus,
+              paidAt: (wcStatus === 'processing' || wcStatus === 'completed') ? new Date().toISOString() : null
+            });
+          }
+        }
+      } catch (err) {
+        console.error(`⚠️ Failed to self-heal status for Order #${order.id}:`, err);
+      }
+    });
+  }, [orders]);
+
   const handleSaveShowroom = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);

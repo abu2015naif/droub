@@ -1065,7 +1065,7 @@ export default function App() {
                 sku: item.sku || item.id.toString()
               })),
               shippingAmount: shippingCost.toFixed(2),
-              returnUrl: `${window.location.origin}?payment=success&order_id=${effectiveOrderId}`,
+              returnUrl: `${window.location.origin}?payment=success&order_id=${effectiveOrderId}&fs_order_id=${fsOrderId}`,
               cancelUrl: `${window.location.origin}?payment=cancel&order_id=${effectiveOrderId}`
             })
           });
@@ -1125,7 +1125,7 @@ export default function App() {
                 sku: item.sku || item.id.toString()
               })),
               shippingAmount: shippingCost.toFixed(2),
-              returnUrl: `${window.location.origin}?payment=success&order_id=${effectiveOrderId}`,
+              returnUrl: `${window.location.origin}?payment=success&order_id=${effectiveOrderId}&fs_order_id=${fsOrderId}`,
               cancelUrl: `${window.location.origin}?payment=cancel&order_id=${effectiveOrderId}`
             })
           });
@@ -1178,7 +1178,7 @@ export default function App() {
                 address: shippingDetails.address,
                 city: shippingDetails.city
               },
-              returnUrl: `${window.location.origin}?payment=success&order_id=${effectiveOrderId}`,
+              returnUrl: `${window.location.origin}?payment=success&order_id=${effectiveOrderId}&fs_order_id=${fsOrderId}`,
               cancelUrl: `${window.location.origin}?payment=cancel&order_id=${effectiveOrderId}`,
               payMethod: "creditcard"
             })
@@ -1281,6 +1281,7 @@ export default function App() {
     const orderId = urlParams.get('order_id');
     const telrStatus = urlParams.get('telr_status');
     const paymentStatus = urlParams.get('payment');
+    const fsOrderIdFromUrl = urlParams.get('fs_order_id');
 
     if (telrRef && orderId) {
       const checkPayment = async () => {
@@ -1314,14 +1315,16 @@ export default function App() {
 
             // ALSO update Firestore status
             try {
-              let fsDocId = null;
-              if (orderId.length > 15 || isNaN(Number(orderId))) {
-                fsDocId = orderId;
-              } else {
-                const fsOrderQuery = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
-                const fsOrderSnap = await getDocs(fsOrderQuery);
-                if (!fsOrderSnap.empty) {
-                  fsDocId = fsOrderSnap.docs[0].id;
+              let fsDocId = fsOrderIdFromUrl || null;
+              if (!fsDocId) {
+                if (orderId.length > 15 || isNaN(Number(orderId))) {
+                  fsDocId = orderId;
+                } else {
+                  const fsOrderQuery = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
+                  const fsOrderSnap = await getDocs(fsOrderQuery);
+                  if (!fsOrderSnap.empty) {
+                    fsDocId = fsOrderSnap.docs[0].id;
+                  }
                 }
               }
 
@@ -1382,14 +1385,16 @@ export default function App() {
 
           // ALSO update Firestore status
           try {
-            let fsDocId = null;
-            if (orderId.length > 15 || isNaN(Number(orderId))) {
-              fsDocId = orderId;
-            } else {
-              const fsOrderQuery = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
-              const fsOrderSnap = await getDocs(fsOrderQuery);
-              if (!fsOrderSnap.empty) {
-                fsDocId = fsOrderSnap.docs[0].id;
+            let fsDocId = fsOrderIdFromUrl || null;
+            if (!fsDocId) {
+              if (orderId.length > 15 || isNaN(Number(orderId))) {
+                fsDocId = orderId;
+              } else {
+                const fsOrderQuery = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
+                const fsOrderSnap = await getDocs(fsOrderQuery);
+                if (!fsOrderSnap.empty) {
+                  fsDocId = fsOrderSnap.docs[0].id;
+                }
               }
             }
 
