@@ -512,6 +512,24 @@ async function startServer() {
     }
   });
 
+  app.get("/api/orders/:id", async (req, res) => {
+    try {
+      console.log(`📡 Fetching WooCommerce order ${req.params.id}...`);
+      // Validate that id looks like a WooCommerce integer ID to prevent unnecessary external requests
+      if (isNaN(Number(req.params.id))) {
+        return res.status(400).json({ error: "Invalid order ID format. Must be numeric." });
+      }
+      const response = await WooCommerce.get(`orders/${req.params.id}`);
+      res.json(response.data);
+    } catch (error: any) {
+      console.error(`❌ WooCommerce API Error (Fetch Order ${req.params.id}):`, error.message);
+      res.status(500).json({ 
+        error: "Failed to fetch order", 
+        message: error.response?.data?.message || error.message
+      });
+    }
+  });
+
   app.put("/api/orders/:id", async (req, res) => {
     try {
       console.log(`📡 Updating order ${req.params.id}...`);

@@ -1283,32 +1283,53 @@ export default function App() {
           
           if (data.order && data.order.status && data.order.status.code === 3) {
             // Payment successful
-            // Update WooCommerce order status
-            const orderRes = await fetch(`/api/orders/${orderId}`);
-            const orderData = await orderRes.json();
-            const orderTotal = parseFloat(orderData.total || "0");
+            // Update WooCommerce order status safely if it is a numeric ID
+            let orderTotal = 0;
+            const isNumericOrderId = orderId && !isNaN(Number(orderId)) && orderId.length < 15;
 
-            await fetch(`/api/orders/${orderId}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: 'processing', set_paid: true })
-            });
+            if (isNumericOrderId) {
+              try {
+                const orderRes = await fetch(`/api/orders/${orderId}`);
+                if (orderRes.ok) {
+                  const orderData = await orderRes.json();
+                  orderTotal = parseFloat(orderData.total || "0");
+                }
 
-            // ALSO update Firestore status if we find the matching order
+                await fetch(`/api/orders/${orderId}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'processing', set_paid: true })
+                });
+              } catch (wcErr) {
+                console.warn("⚠️ WooCommerce status update failed in Telr check:", wcErr);
+              }
+            }
+
+            // ALSO update Firestore status
             try {
-              const fsOrderQuery = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
-              const fsOrderSnap = await getDocs(fsOrderQuery);
-              if (!fsOrderSnap.empty) {
-                await updateDoc(doc(db, "orders", fsOrderSnap.docs[0].id), { 
+              let fsDocId = null;
+              if (orderId.length > 15 || isNaN(Number(orderId))) {
+                fsDocId = orderId;
+              } else {
+                const fsOrderQuery = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
+                const fsOrderSnap = await getDocs(fsOrderQuery);
+                if (!fsOrderSnap.empty) {
+                  fsDocId = fsOrderSnap.docs[0].id;
+                }
+              }
+
+              if (fsDocId) {
+                await updateDoc(doc(db, "orders", fsDocId), { 
                   status: 'processing',
                   paidAt: new Date().toISOString()
                 });
+                console.log("✅ Successfully updated status of order in Firestore via direct or lookup ID:", fsDocId);
               }
             } catch (fsErr) {
               console.error("Error updating FS status in Telr check:", fsErr);
             }
 
-            trackConversion(orderId, orderTotal);
+            trackConversion(orderId, orderTotal || 0);
 
             alert("تمت عملية الدفع بنجاح! شكراً لتسوقكم.");
             setCart([]);
@@ -1323,34 +1344,55 @@ export default function App() {
       };
       checkPayment();
     } else if (paymentStatus === 'success' && orderId) {
-      // Direct return from Telr success
+      // Direct return from Telr success or Tamara/Tabby success
       const finalizeSuccess = async () => {
         try {
-          const orderRes = await fetch(`/api/orders/${orderId}`);
-          const orderData = await orderRes.json();
-          const orderTotal = parseFloat(orderData.total || "0");
+          let orderTotal = 0;
+          const isNumericOrderId = orderId && !isNaN(Number(orderId)) && orderId.length < 15;
 
-          await fetch(`/api/orders/${orderId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'processing', set_paid: true })
-          });
+          if (isNumericOrderId) {
+            try {
+              const orderRes = await fetch(`/api/orders/${orderId}`);
+              if (orderRes.ok) {
+                const orderData = await orderRes.json();
+                orderTotal = parseFloat(orderData.total || "0");
+              }
 
-          // ALSO update Firestore status if we find the matching order
+              await fetch(`/api/orders/${orderId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'processing', set_paid: true })
+              });
+            } catch (wcErr) {
+              console.warn("⚠️ WooCommerce status update failed in finalizeSuccess:", wcErr);
+            }
+          }
+
+          // ALSO update Firestore status
           try {
-            const fsOrderQuery = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
-            const fsOrderSnap = await getDocs(fsOrderQuery);
-            if (!fsOrderSnap.empty) {
-              await updateDoc(doc(db, "orders", fsOrderSnap.docs[0].id), { 
+            let fsDocId = null;
+            if (orderId.length > 15 || isNaN(Number(orderId))) {
+              fsDocId = orderId;
+            } else {
+              const fsOrderQuery = query(collection(db, "orders"), where("wcOrderId", "==", parseInt(orderId)));
+              const fsOrderSnap = await getDocs(fsOrderQuery);
+              if (!fsOrderSnap.empty) {
+                fsDocId = fsOrderSnap.docs[0].id;
+              }
+            }
+
+            if (fsDocId) {
+              await updateDoc(doc(db, "orders", fsDocId), { 
                 status: 'processing',
                 paidAt: new Date().toISOString()
               });
+              console.log("✅ Successfully updated status of order in Firestore via direct or lookup ID:", fsDocId);
             }
           } catch (fsErr) {
             console.error("Error updating FS status in Telr finalize:", fsErr);
           }
 
-          trackConversion(orderId, orderTotal);
+          trackConversion(orderId, orderTotal || 0);
 
           alert("تمت عملية الدفع بنجاح! شكراً لتسوقكم.");
           setCart([]);
