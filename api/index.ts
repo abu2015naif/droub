@@ -8,10 +8,99 @@ import fs from "fs";
 import cors from "cors";
 import multer from "multer";
 import FormData from "form-data";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 dotenv.config();
+
+// Initialize Firebase for Backend Real-Time Firestore Synchronization
+let db: any = null;
+try {
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    console.log("🔥 [Firebase Backend] Initialized Firestore client with Database ID:", firebaseConfig.firestoreDatabaseId);
+  } else {
+    console.warn("⚠️ [Firebase Backend] firebase-applet-config.json not found. Firestore updates will be bypassed.");
+  }
+} catch (err: any) {
+  console.error("❌ [Firebase Backend] Initialization failed inside express server:", err.message);
+}
+
+// Helper to keep Firestore and WooCommerce statuses perfectly unified and synchronized
+async function updateFirestoreOrderStatus(orderReferenceId: string | number, status: string, gatewayDetails?: string) {
+  if (!db) {
+    console.warn("⚠️ [Firestore Sync] Skipping: Firestore database is not initialized.");
+    return;
+  }
+  try {
+    const refStr = String(orderReferenceId).trim();
+    console.log(`📡 [Firestore Sync] Real-time Sync triggered. ID Ref: "${refStr}", New Status: "${status}"`);
+    
+    let fsDocId: string | null = null;
+    
+    // 1. Check if the reference ID is a direct Firestore Doc ID
+    if (refStr.length > 15 || isNaN(Number(refStr))) {
+      fsDocId = refStr;
+      console.log(`📋 [Firestore Sync] Direct Match - Treating reference sequence directly as a Firestore document id: "${fsDocId}"`);
+    } else {
+      // 2. Query Firestore orders collection by wcOrderId (using parsed integer math)
+      const numericWcId = parseInt(refStr, 10);
+      const ordersRef = collection(db, "orders");
+      const q = query(ordersRef, where("wcOrderId", "==", numericWcId));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        fsDocId = querySnapshot.docs[0].id;
+        console.log(`📋 [Firestore Sync] Query Match - Successfully mapped WooCommerce order #${numericWcId} to Firestore document: ${fsDocId}`);
+      } else {
+        // Fallback string-comparison check for other data format entries
+        const qStr = query(ordersRef, where("wcOrderId", "==", refStr));
+        const qStrSnap = await getDocs(qStr);
+        if (!qStrSnap.empty) {
+          fsDocId = qStrSnap.docs[0].id;
+          console.log(`📋 [Firestore Sync] String-Query Match - Successfully mapped WooCommerce order reference "${refStr}" to Firestore document: ${fsDocId}`);
+        } else {
+          console.warn(`⚠️ [Firestore Sync] Look-up failed: Cannot find any existing Firestore document matching WooCommerce order: #${refStr}`);
+        }
+      }
+    }
+
+    if (fsDocId) {
+      const docRef = doc(db, "orders", fsDocId);
+      const updatePayload: any = {
+        status: status,
+        updatedAt: new Date().toISOString()
+      };
+      
+      // If status implies payment completion
+      if (status === 'processing' || status === 'completed') {
+        updatePayload.paidAt = new Date().toISOString();
+      }
+      
+      if (gatewayDetails) {
+        updatePayload.paymentNote = gatewayDetails;
+        // Optionally detect and set gateway details
+        if (gatewayDetails.toLowerCase().includes("tamara")) {
+          updatePayload.gateway = "tamara";
+        } else if (gatewayDetails.toLowerCase().includes("tabby")) {
+          updatePayload.gateway = "tabby";
+        } else if (gatewayDetails.toLowerCase().includes("telr")) {
+          updatePayload.gateway = "telr";
+        }
+      }
+      
+      await updateDoc(docRef, updatePayload);
+      console.log(`✅ [Firestore Sync] Succesfully synced order document "${fsDocId}" to status: "${status}" with updated metadata.`);
+    }
+  } catch (error: any) {
+    console.error(`❌ [Firestore Sync] Synchronization step failed for Reference "${orderReferenceId}":`, error.message);
+  }
+}
 
 async function startServer() {
   const WC = (WooCommerceRestApi as any).default || WooCommerceRestApi;
@@ -538,6 +627,13 @@ async function startServer() {
       const response = await WooCommerce.put(`orders/${req.params.id}`, req.body);
       
       console.log(`✅ Order ${req.params.id} updated successfully.`);
+      
+      // Keep Firestore status perfectly synchronized with PUT order updates
+      if (req.body.status) {
+        let note = req.body.customer_note || `منصة المتجر: تحديث حالة الطلب إلى "${req.body.status}"`;
+        await updateFirestoreOrderStatus(req.params.id, req.body.status, note);
+      }
+      
       clearOrderCache();
       res.json(response.data);
     } catch (error: any) {
@@ -818,6 +914,13 @@ async function startServer() {
           customer_note: `تم تأكيد الدفع عبر تمارا. رقم عملية تمارا: ${order_id}`
         });
         console.log(`✅ WooCommerce Order #${order_reference_id} updated to processing.`);
+
+        // Direct real-time Firestore sync on Webhook delivery
+        await updateFirestoreOrderStatus(
+          order_reference_id, 
+          'processing', 
+          `تمارا: تم تأكيد الدفع الإلكتروني بنجاح (رقم العملية: ${order_id})`
+        );
       }
 
       res.json({ received: true });
@@ -947,6 +1050,14 @@ async function startServer() {
           set_paid: true,
           customer_note: `تم تأكيد الدفع عبر تابي. رقم عملية تابي: ${id}`
         });
+        console.log(`✅ WooCommerce Order #${orderReferenceId} updated to processing.`);
+
+        // Direct real-time Firestore sync on Webhook delivery
+        await updateFirestoreOrderStatus(
+          orderReferenceId,
+          'processing',
+          `تابي: تم تأكيد الدفع الإلكتروني بنجاح (رقم العملية: ${id})`
+        );
       }
       res.json({ received: true });
     } catch (error: any) {
