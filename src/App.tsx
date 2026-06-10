@@ -139,6 +139,63 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [typedSearch, setTypedSearch] = useState("");
+  const [searchSuggestions, setSearchSuggestions] = useState<Product[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const searchContainerRefMobile = useRef<HTMLDivElement>(null);
+
+  // Close search suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const isOutsideDesktop = !searchContainerRef.current || !searchContainerRef.current.contains(event.target as Node);
+      const isOutsideMobile = !searchContainerRefMobile.current || !searchContainerRefMobile.current.contains(event.target as Node);
+      if (isOutsideDesktop && isOutsideMobile) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Fetch search suggestions with a debounce of 300ms
+  useEffect(() => {
+    const trimmed = typedSearch.trim();
+    if (trimmed.length < 2) {
+      setSearchSuggestions([]);
+      setLoadingSuggestions(false);
+      return;
+    }
+
+    setLoadingSuggestions(true);
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/products?search=${encodeURIComponent(trimmed)}&per_page=6`);
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) {
+            setSearchSuggestions(data);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching suggestions:", err);
+      } finally {
+        setLoadingSuggestions(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [typedSearch]);
+
+  // Reset the search query instantly only when the search field is completely cleared
+  useEffect(() => {
+    if (typedSearch === "") {
+      setSearchQuery("");
+    }
+  }, [typedSearch]);
   const [activeTab, setActiveTab] = useState<"home" | "shop" | "admin" | "checkout" | "profile" | "returns" | "seo-directory">("home");
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -1584,15 +1641,105 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="hidden md:flex items-center bg-gray-100 rounded-full px-4 py-2 w-64">
-              <Search size={18} className="text-gray-400" />
-              <input 
-                type="text" 
-                placeholder="ابحث عن منتج..." 
-                className="bg-transparent border-none focus:ring-0 text-sm w-full pr-2"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+            {/* Desktop Search Bar with Floating Autocomplete */}
+            <div ref={searchContainerRef} className="hidden md:block relative z-50">
+              <div className="flex items-center bg-gray-100 rounded-full px-4 py-2 w-64 border border-transparent focus-within:border-red-500 focus-within:bg-white focus-within:shadow-md transition-all">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery(typedSearch);
+                    setShowSuggestions(false);
+                    setActiveTab("shop");
+                  }}
+                  className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-red-600 transition-colors shrink-0"
+                  title="بحث"
+                >
+                  <Search size={18} />
+                </button>
+                <input 
+                  type="text" 
+                  placeholder="ابحث عن منتج..." 
+                  className="bg-transparent border-none focus:ring-0 text-sm w-full pr-2 text-right outline-none"
+                  style={{ direction: 'rtl' }}
+                  value={typedSearch}
+                  onChange={(e) => {
+                    setTypedSearch(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      setSearchQuery(typedSearch);
+                      setShowSuggestions(false);
+                      setActiveTab("shop");
+                    }
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                />
+                {typedSearch && (
+                  <button 
+                    onClick={() => {
+                      setTypedSearch("");
+                      setSearchQuery("");
+                    }} 
+                    className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Suggestions Dropdown */}
+              <AnimatePresence>
+                {showSuggestions && typedSearch.trim().length >= 2 && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-full mt-2 w-80 bg-white border border-gray-100 rounded-2xl shadow-2xl z-50 overflow-hidden"
+                  >
+                    {loadingSuggestions && (
+                      <div className="p-4 text-center text-gray-400 text-xs sm:text-sm flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></span>
+                        <span>جاري البحث عن اقتراحات...</span>
+                      </div>
+                    )}
+                    
+                    {!loadingSuggestions && searchSuggestions.length > 0 && (
+                      <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
+                        {searchSuggestions.map((prod) => (
+                          <button
+                            key={`suggest-desktop-${prod.id}`}
+                            onClick={() => {
+                              setSelectedProduct(prod);
+                              addToRecentlyViewed(prod);
+                              setShowSuggestions(false);
+                            }}
+                            className="w-full text-right p-3 hover:bg-red-50/50 flex items-center gap-3 transition-all text-xs sm:text-sm border-r-4 border-transparent hover:border-red-600"
+                          >
+                            <img
+                              src={prod.images?.[0]?.src || "https://placehold.co/50x50?text=DS"}
+                              alt={prod.name}
+                              className="w-10 h-10 object-cover rounded-lg border border-gray-100 shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-bold text-gray-800 truncate leading-tight">{prod.name}</h4>
+                              <span className="text-red-600 font-extrabold mt-1 inline-block text-xs">{prod.price} ر.س</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {!loadingSuggestions && searchSuggestions.length === 0 && (
+                      <div className="p-4 text-center text-gray-400 text-xs sm:text-sm">
+                        لا توجد نتائج تطابق بحثك
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {user ? (
@@ -1676,6 +1823,109 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* Sticky Mobile Search Bar with Floating Autocomplete */}
+      <div className="sticky top-[80px] z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 py-3 px-4 md:hidden">
+        <div ref={searchContainerRefMobile} className="relative w-full">
+          <div className="flex items-center bg-gray-100 rounded-full px-4 py-2 w-full border border-transparent focus-within:border-red-500 focus-within:bg-white focus-within:shadow-md transition-all">
+            <button 
+              type="button"
+              onClick={() => {
+                setSearchQuery(typedSearch);
+                setShowSuggestions(false);
+                setActiveTab("shop");
+              }}
+              className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-red-600 transition-colors shrink-0"
+              title="بحث"
+            >
+              <Search size={18} />
+            </button>
+            <input 
+              type="text" 
+              placeholder="ابحث عن منتج..." 
+              className="bg-transparent border-none focus:ring-0 text-sm w-full pr-2 text-right outline-none"
+              style={{ direction: 'rtl' }}
+              value={typedSearch}
+              onChange={(e) => {
+                setTypedSearch(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  setSearchQuery(typedSearch);
+                  setShowSuggestions(false);
+                  setActiveTab("shop");
+                }
+              }}
+              onFocus={() => setShowSuggestions(true)}
+            />
+            {typedSearch && (
+              <button 
+                onClick={() => {
+                  setTypedSearch("");
+                  setSearchQuery("");
+                }} 
+                className="p-1 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Suggestions Dropdown for Mobile */}
+          <AnimatePresence>
+            {showSuggestions && typedSearch.trim().length >= 2 && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                transition={{ duration: 0.15 }}
+                className="absolute right-0 left-0 top-full mt-2 bg-white border border-gray-100 rounded-2xl shadow-xl z-50 overflow-hidden"
+              >
+                {loadingSuggestions && (
+                  <div className="p-4 text-center text-gray-400 text-xs flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></span>
+                    <span>جاري البحث عن اقتراحات...</span>
+                  </div>
+                )}
+                
+                {!loadingSuggestions && searchSuggestions.length > 0 && (
+                  <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
+                    {searchSuggestions.map((prod) => (
+                      <button
+                        key={`suggest-mobile-${prod.id}`}
+                        onClick={() => {
+                          setSelectedProduct(prod);
+                          addToRecentlyViewed(prod);
+                          setShowSuggestions(false);
+                        }}
+                        className="w-full text-right p-3 hover:bg-red-50/50 flex items-center gap-3 transition-all text-xs border-r-4 border-transparent hover:border-red-600"
+                      >
+                        <img
+                          src={prod.images?.[0]?.src || "https://placehold.co/50x50?text=DS"}
+                          alt={prod.name}
+                          className="w-10 h-10 object-cover rounded-lg border border-gray-100 shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-gray-800 truncate leading-tight">{prod.name}</h4>
+                          <span className="text-red-600 font-extrabold mt-1 inline-block text-xs">{prod.price} ر.س</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {!loadingSuggestions && searchSuggestions.length === 0 && (
+                  <div className="p-4 text-center text-gray-400 text-xs">
+                    لا توجد نتائج تطابق بحثك
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
 
       {/* Mobile Menu */}
       <AnimatePresence>
