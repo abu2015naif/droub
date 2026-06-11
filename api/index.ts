@@ -810,14 +810,19 @@ async function startServer() {
       params.append("ivp_authkey", apiKey.trim());
       params.append("order_ref", ref);
 
-      const response = await axios.post("https://secure.telr.com/gateway/order.json", params, {
+      const proxyUrl = "https://api.droubalsalamah.com/telr-proxy.php";
+      console.log(`📡 Checking Telr payment status via Proxy for Ref #${ref}`);
+
+      const response = await axios.post(proxyUrl, params.toString(), {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
         }
       });
+      console.log(`📡 Telr Check Proxy Response:`, JSON.stringify(response.data, null, 2));
       res.json(response.data);
     } catch (error: any) {
-      console.error("Telr Check Error:", error.response?.data || error.message);
+      console.error("Telr Check Error via Proxy:", error.response?.data || error.message);
       res.status(500).json({ error: "Failed to check Telr payment status" });
     }
   });
@@ -855,17 +860,23 @@ async function startServer() {
           params.append("ivp_authkey", apiKey);
           params.append("order_ref", tranref);
 
-          const checkRes = await axios.post("https://secure.telr.com/gateway/order.json", params, {
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+          const proxyUrl = "https://api.droubalsalamah.com/telr-proxy.php";
+          console.log(`📡 Verifying Telr Webhook via Proxy for TranRef #${tranref}`);
+
+          const checkRes = await axios.post(proxyUrl, params.toString(), {
+            headers: { 
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json'
+            }
           });
           
           const checkData = checkRes.data;
-          console.log("🔍 Telr server webhook verification payload:", JSON.stringify(checkData, null, 2));
+          console.log("🔍 Telr server webhook verification payload via Proxy:", JSON.stringify(checkData, null, 2));
           
           const code = checkData?.order?.status?.code;
           // Code 3 is Authorized / Captured, Code 2 is Paid
           if (code === 3 || code === 2) {
-            console.log(`✅ Webhook verified directly with Telr server: Order #${cartid}`);
+            console.log(`✅ Webhook verified via Proxy with Telr server: Order #${cartid}`);
             verifiedSuccess = true;
           } else {
             console.warn(`⚠️ Webhook verification returned code: ${code}. Fallback to trusting webhook payload status so we do not block client payment.`);
