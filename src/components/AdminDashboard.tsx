@@ -2977,12 +2977,55 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                       <div className="text-right">
                         <span className="text-2xl font-black text-red-700 block">{selectedOrder.total} ر.س</span>
                         {selectedOrder.status === 'awaiting-payment' && (
-                          <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-md border border-orange-200">
+                          <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-md border border-orange-200 block">
                             ⚠️ تنبيه: العميل فتح صفحة الدفع ولم يكمل العملية بنجاح حتى الآن.
                           </span>
                         )}
                       </div>
                     </div>
+
+                    {selectedOrder.status === 'awaiting-payment' && (
+                      <div className="pt-4 border-t border-gray-200 space-y-2">
+                        <div className="text-xs text-gray-500 font-bold mb-1">التحقق اليدوي التلقائي من بوابة الدفع (تيلر):</div>
+                        <button
+                          type="button"
+                          disabled={loading}
+                          onClick={async () => {
+                            const refInput = window.prompt("الرجاء إدخال رقم المعاملة من لوحة تحكم تيلر (مثال: 030099466671) للتحقق المباشر والتحديث تلقائياً:");
+                            if (!refInput) return;
+                            const refTrimmed = refInput.trim();
+                            
+                            try {
+                              setLoading(true);
+                              const checkUrl = `/api/payment/telr/check/${refTrimmed}`;
+                              const checkRes = await fetch(checkUrl);
+                              const checkData = await checkRes.json();
+                              
+                              const code = checkData?.order?.status?.code;
+                              const isPaid = code === 3 || code === 2;
+                              
+                              if (isPaid) {
+                                // Update WooCommerce and Firestore using our proven updateOrderStatus function
+                                await updateOrderStatus(selectedOrder.id, 'processing');
+                                alert("✅ تم العثور على المعاملة مدفوعة بنجاح! تم تحديث حالة الطلب إلى 'قيد التنفيذ' وتأكيد عملية الدفع وتوحيدها مابين السيرفر وسلة المشتريات.");
+                              } else {
+                                const errorMsg = checkData?.order?.status?.text || "الحالة غير مدفوعة أو المعاملة غير موجودة";
+                                alert(`⚠️ نتيجة التحقق من تيلر: ${errorMsg} (رمز الحالة: ${code || 'غير معروف'}). لم يتم تحديث الطلب.`);
+                              }
+                            } catch (err: any) {
+                              console.error(err);
+                              alert("❌ فشل الاتصال ببوابة تيلر للتحقق: " + err.message);
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                          className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors disabled:opacity-50"
+                        >
+                          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                          التحقق والربط المباشر من تيلr (للطلبات السابقة والحالية)
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
