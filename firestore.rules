@@ -80,9 +80,19 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || hasPermission('orders'));
       allow create: if true;
-      allow update, delete: if hasPermission('orders');
+      allow read: if 
+        (!('status' in resource.data) || resource.data.status == "awaiting-payment") || 
+        (isAuthenticated() && (resource.data.userId == request.auth.uid || hasPermission('orders')));
+      allow update: if 
+        hasPermission('orders') || 
+        (
+          resource.data.status == "awaiting-payment" &&
+          request.resource.data.total == resource.data.total &&
+          request.resource.data.items == resource.data.items &&
+          request.resource.data.userId == resource.data.userId
+        );
+      allow delete: if hasPermission('orders');
     }
 
     match /banners/{bannerId} {
