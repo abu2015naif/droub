@@ -1345,8 +1345,10 @@ export default function App() {
         try {
           const res = await fetch(`/api/payment/telr/check/${telrRef}`);
           const data = await res.json();
+          console.log("🔍 Telr Check Status response:", data);
           
-          if (data.order && data.order.status && data.order.status.code === 3) {
+          const isSuccess = data.order && data.order.status && (data.order.status.code === 3 || data.order.status.code === 2);
+          if (isSuccess) {
             // Payment successful
             // Update WooCommerce order status safely if it is a numeric ID
             let orderTotal = 0;
@@ -3129,6 +3131,58 @@ function ProfilePage({ user, onBack }: { user: FirebaseUser; onBack: () => void 
 
     fetchOrders();
   }, [user.uid]);
+
+  // Self-healing check for any order stuck in 'awaiting-payment' or 'pending' status (sync with WooCommerce)
+  useEffect(() => {
+    if (!orders || orders.length === 0) return;
+
+    const pendingSyncOrders = orders.filter(
+      o => (o.status === 'awaiting-payment' || o.status === 'pending') && o.wcOrderId && !isNaN(Number(o.wcOrderId))
+    );
+
+    if (pendingSyncOrders.length === 0) return;
+
+    const syncCheckedObj = (window as any).__syncCheckedOrdersProfile || {};
+
+    pendingSyncOrders.forEach(async (order) => {
+      const orderIdKey = order.id;
+      // Throttling: only check once every 30 seconds per order to avoid rate limits
+      if (syncCheckedObj[orderIdKey] && Date.now() - syncCheckedObj[orderIdKey] < 30000) {
+        return;
+      }
+
+      syncCheckedObj[orderIdKey] = Date.now();
+      (window as any).__syncCheckedOrdersProfile = syncCheckedObj;
+
+      try {
+        console.log(`📡 Background syncing WooCommerce status for user Order #${order.id} (WC #${order.wcOrderId})...`);
+        const res = await fetch(`/api/orders/${order.wcOrderId}`);
+        if (res.ok) {
+          const wcOrderData = await res.json();
+          const wcStatus = wcOrderData.status;
+
+          if (wcStatus && wcStatus !== 'pending' && wcStatus !== 'awaiting-payment') {
+            console.log(`🔄 Automatically updating Firestore Order #${order.id} status to match WooCommerce status '${wcStatus}'`);
+            await updateDoc(doc(db, "orders", order.id), {
+              status: wcStatus === 'on-hold' ? 'pending' : wcStatus,
+              paidAt: (wcStatus === 'processing' || wcStatus === 'completed') ? new Date().toISOString() : null
+            });
+            
+            // Instantly update the local state for the user's view
+            setOrders(prevOrders => 
+              prevOrders.map(o => o.id === order.id ? { 
+                ...o, 
+                status: wcStatus === 'on-hold' ? 'pending' : wcStatus,
+                paidAt: (wcStatus === 'processing' || wcStatus === 'completed') ? new Date().toISOString() : null
+              } : o)
+            );
+          }
+        }
+      } catch (err) {
+        console.error(`⚠️ Failed to self-heal status for user Order #${order.id}:`, err);
+      }
+    });
+  }, [orders]);
 
   const getStatusColor = (status: string) => {
     switch (status) {

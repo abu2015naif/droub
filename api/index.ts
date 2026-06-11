@@ -173,6 +173,48 @@ async function startServer() {
     next();
   });
 
+  // Catch POST redirection from Telr gateway and convert to GET with query params
+  app.post("/", (req, res, next) => {
+    console.log("📥 Received POST request to root '/':", {
+      query: req.query,
+      body: req.body
+    });
+
+    const tranref = req.body.tranref || req.query.telr_ref;
+    const cartid = req.body.cartid || req.body.cart_id || req.query.order_id;
+    const authStatus = req.body.auth;
+    
+    const payment = req.query.payment || (authStatus === 'A' ? 'success' : req.query.payment);
+    const orderId = req.query.order_id || cartid;
+    const fsOrderId = req.query.fs_order_id;
+
+    if (tranref || orderId || payment) {
+      const redirectParams = new URLSearchParams();
+      if (payment) {
+        redirectParams.append("payment", payment.toString());
+      } else if (authStatus === 'A') {
+        redirectParams.append("payment", "success");
+      } else if (authStatus === 'C' || authStatus === 'D') {
+        redirectParams.append("payment", "cancel");
+      }
+
+      if (orderId) redirectParams.append("order_id", orderId.toString());
+      if (tranref) redirectParams.append("telr_ref", tranref.toString());
+      if (fsOrderId) redirectParams.append("fs_order_id", fsOrderId.toString());
+
+      const redirectUrl = `/?${redirectParams.toString()}`;
+      console.log(`📡 Redirecting Telr POST return to GET: ${redirectUrl}`);
+      return res.redirect(redirectUrl);
+    }
+    
+    // Fallback if not a payment redirect, serve index.html or next
+    const distPath = path.join(process.cwd(), "dist");
+    if (process.env.NODE_ENV === "production" && fs.existsSync(distPath)) {
+      return res.sendFile(path.join(distPath, "index.html"));
+    }
+    next();
+  });
+
   // API Routes
   app.use((req, res, next) => {
     console.log(`Incoming request: ${req.method} ${req.url} (Path: ${req.path})`);
@@ -770,6 +812,98 @@ async function startServer() {
     } catch (error: any) {
       console.error("Telr Check Error:", error.response?.data || error.message);
       res.status(500).json({ error: "Failed to check Telr payment status" });
+    }
+  });
+
+  // Telr Webhook Endpoint
+  app.post("/api/payment/telr/webhook", async (req, res) => {
+    try {
+      console.log("🔔 Received Telr Webhook:", JSON.stringify(req.body, null, 2));
+
+      // Extract details
+      const authStatus = req.body.auth || req.body.auth_status;
+      const tranref = req.body.tranref || req.body.tran_ref || req.body.auth_tranref;
+      const cartid = req.body.cartid || req.body.cart_id || req.body.auth_cartid;
+      
+      console.log(`🔔 Telr Webhook parsed: auth=${authStatus}, tranref=${tranref}, cartid=${cartid}`);
+
+      if (!cartid) {
+        console.warn("⚠️ Telr webhook received empty cartid/order_id.");
+        return res.status(400).json({ error: "Missing cartid/order_id" });
+      }
+
+      // Check if authorized (A = Authorised / Paid, Success)
+      const isSuccess = authStatus === 'A';
+      
+      // Double check payment status with Telr server directly to prevent fake webhooks (spoofing)
+      let verifiedSuccess = isSuccess;
+      if (isSuccess && tranref) {
+        try {
+          const storeId = (process.env.TELR_STORE_ID || "30349").trim();
+          const apiKey = (process.env.TELR_API_KEY || "Z7TjQ~XFDJ@d6N5R").trim();
+          
+          const params = new URLSearchParams();
+          params.append("ivp_method", "check");
+          params.append("ivp_store", storeId);
+          params.append("ivp_authkey", apiKey);
+          params.append("order_ref", tranref);
+
+          const checkRes = await axios.post("https://secure.telr.com/gateway/order.json", params, {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+          });
+          
+          const checkData = checkRes.data;
+          console.log("🔍 Telr server webhook verification payload:", JSON.stringify(checkData, null, 2));
+          
+          const code = checkData?.order?.status?.code;
+          // Code 3 is Authorized / Captured, Code 2 is Paid
+          if (code === 3 || code === 2) {
+            console.log(`✅ Webhook verified directly with Telr server: Order #${cartid}`);
+            verifiedSuccess = true;
+          } else {
+            console.warn(`⚠️ Webhook verification failed! Telr server returned code: ${code}`);
+            verifiedSuccess = false;
+          }
+        } catch (confirmErr: any) {
+          console.error(`⚠️ Failed to perform backend-to-backend verify of Telr webhook:`, confirmErr.message);
+          // Fallback to default isSuccess if verification server is temporarily down
+        }
+      }
+
+      if (verifiedSuccess) {
+        console.log(`✅ Telr Webhook processed SUCCESS for Order ID #${cartid}`);
+        
+        // 1. Update WooCommerce order status to "processing" (since it was paid)
+        try {
+          console.log(`🔄 Updating WooCommerce order status for #${cartid} via Webhook...`);
+          await WooCommerce.put(`orders/${cartid}`, {
+            status: "processing",
+            set_paid: true,
+            transaction_id: tranref || ""
+          });
+          console.log(`✅ WooCommerce Order #${cartid} successfully updated to 'processing'.`);
+        } catch (wcErr: any) {
+          console.error(`⚠️ WooCommerce status update failed in Telr Webhook:`, wcErr.response?.data || wcErr.message);
+        }
+
+        // 2. Update Firestore order status
+        try {
+          console.log(`🔄 Updating Firestore order status for #${cartid} via Webhook...`);
+          await updateFirestoreOrderStatus(cartid, "processing", `تيلر: تم تأكيد الدفع الإلكتروني بنجاح (رقم المعاملة: ${tranref || "N/A"})`);
+          console.log(`✅ Firestore Order synced successfully via Webhook.`);
+        } catch (fsErr: any) {
+          console.error(`⚠️ Firestore status update failed in Telr Webhook:`, fsErr.message);
+        }
+
+      } else {
+        console.log(`❌ Telr Webhook processed FAILURE/CANCEL (auth_status: ${authStatus}) for Order ID #${cartid}`);
+      }
+
+      // Always return 200 OK to Telr to prevent continuous retries
+      res.status(200).send("OK");
+    } catch (error: any) {
+      console.error("❌ Telr Webhook Error:", error.message);
+      res.status(500).json({ error: "Webhook processing failed" });
     }
   });
 
