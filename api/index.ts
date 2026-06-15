@@ -10,6 +10,7 @@ import multer from "multer";
 import FormData from "form-data";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
+import * as admin from "firebase-admin";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -704,7 +705,7 @@ async function startServer() {
       
       // Use credentials from user screenshot as defaults if env vars are missing
       const storeId = (process.env.TELR_STORE_ID || "30349").trim();
-      const apiKey = (process.env.TELR_API_KEY || "Z7TjQ~XFDJ@d6N5R").trim();
+      const apiKey = (process.env.TELR_API_KEY || "hWfvD@mzqvk~kkZb").trim();
       const testMode = process.env.TELR_TEST_MODE === "1" ? "1" : "0";
 
       if (!storeId || !apiKey) {
@@ -798,7 +799,7 @@ async function startServer() {
     try {
       const { ref } = req.params;
       const storeId = process.env.TELR_STORE_ID || "30349";
-      const apiKey = process.env.TELR_API_KEY || "Z7TjQ~XFDJ@d6N5R";
+      const apiKey = process.env.TELR_API_KEY || "hWfvD@mzqvk~kkZb";
 
       if (!storeId || !apiKey) {
         return res.status(500).json({ error: "Telr configuration missing" });
@@ -852,7 +853,7 @@ async function startServer() {
       if (isSuccess && tranref) {
         try {
           const storeId = (process.env.TELR_STORE_ID || "30349").trim();
-          const apiKey = (process.env.TELR_API_KEY || "Z7TjQ~XFDJ@d6N5R").trim();
+          const apiKey = (process.env.TELR_API_KEY || "hWfvD@mzqvk~kkZb").trim();
           
           const params = new URLSearchParams();
           params.append("ivp_method", "check");
@@ -875,7 +876,8 @@ async function startServer() {
           
           const code = checkData?.order?.status?.code;
           // Code 3 is Authorized / Captured, Code 2 is Paid
-          if (code === 3 || code === 2) {
+          const isVerifiedPaid = code === 3 || code === 2 || String(code) === "1" || String(code) === "2" || String(code) === "3";
+          if (isVerifiedPaid) {
             console.log(`✅ Webhook verified via Proxy with Telr server: Order #${cartid}`);
             verifiedSuccess = true;
           } else {
@@ -1661,6 +1663,141 @@ async function startServer() {
     res.send(`User-agent: *
 Allow: /
 Sitemap: ${baseUrl}/sitemap.xml`);
+  });
+
+  // Initialize Firebase Admin for FCM HTTP v1
+  let adminAppInstance: any = null;
+  function getFirebaseAdminMessaging() {
+    if (adminAppInstance) {
+      return adminAppInstance.messaging();
+    }
+    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (!serviceAccountJson) {
+      return null;
+    }
+    try {
+      let serviceAccount;
+      if (serviceAccountJson.trim().startsWith("{")) {
+        serviceAccount = JSON.parse(serviceAccountJson);
+      } else {
+        serviceAccount = JSON.parse(Buffer.from(serviceAccountJson.trim(), 'base64').toString('utf8'));
+      }
+      adminAppInstance = (admin as any).initializeApp({
+        credential: (admin as any).credential.cert(serviceAccount)
+      }, "fcm-v1-app");
+      return adminAppInstance.messaging();
+    } catch (e) {
+      console.error("❌ Failed to initialize firebase-admin for FCM V1:", e);
+      return null;
+    }
+  }
+
+  // Proxy Endpoint to dispatch direct push notifications via Firebase Cloud Messaging (FCM)
+  app.post("/api/send-notification", async (req, res) => {
+    try {
+      const { target, token, title, body } = req.body;
+      console.log("📡 [FCM API] Received push notification trigger request:", { target, token, title, body });
+
+      if (!title || !body) {
+        return res.status(400).json({ error: "Title and body are required properties" });
+      }
+
+      // 1. Try modern FCM HTTP v1 (via firebase-admin) if service account JSON exists
+      const messaging = getFirebaseAdminMessaging();
+      if (messaging) {
+        console.log("🚀 [FCM API] Sending via modern FCM HTTP v1 API...");
+        const payload: any = {
+          notification: {
+            title,
+            body,
+          },
+          android: {
+            notification: {
+              sound: "default",
+              clickAction: "FLUTTER_NOTIFICATION_CLICK"
+            }
+          }
+        };
+
+        if (target === "all") {
+          payload.topic = "all";
+        } else {
+          if (!token) {
+            return res.status(400).json({ error: "Token is required for single target notifications" });
+          }
+          payload.token = token;
+        }
+
+        const responseJson = await messaging.send(payload);
+        console.log("✅ [FCM API] HTTP v1 dispatch successful. Response ID:", responseJson);
+        return res.json({
+          success: true,
+          status: "dispatched",
+          details: { messageId: responseJson }
+        });
+      }
+
+      // 2. Fallback to Legacy FCM API if FCM_SERVER_KEY is available
+      console.log("⚠️ [FCM API] Service Account JSON missing. Trying Legacy FCM API via server key...");
+      const fcmServerKey = process.env.FCM_SERVER_KEY;
+      if (!fcmServerKey) {
+        console.warn("⚠️ [FCM API] Both FIREBASE_SERVICE_ACCOUNT_JSON and FCM_SERVER_KEY are undefined. Message logged only.");
+        return res.json({
+          success: true,
+          status: "logged_only",
+          message: "Notification logged to database, but dispatch skipped because of missing FCM service credential."
+        });
+      }
+
+      // Construct direct Legacy FCM POST structure
+      const fcmHeaders = {
+        "Authorization": `key=${fcmServerKey.trim()}`,
+        "Content-Type": "application/json"
+      };
+
+      const fcmPayload: any = {
+        notification: {
+          title: title,
+          body: body,
+          sound: "default",
+          icon: "/logo.png"
+        },
+        data: {
+          title: title,
+          body: body,
+          click_action: "FLUTTER_NOTIFICATION_CLICK"
+        }
+      };
+
+      if (target === "all") {
+        fcmPayload.to = "/topics/all";
+      } else {
+        if (!token) {
+          return res.status(400).json({ error: "Token is required for single target notifications" });
+        }
+        fcmPayload.to = token;
+      }
+
+      console.log(`📡 Sending layout payload to Legacy FCM protocol:`, JSON.stringify(fcmPayload));
+      const fcmResponse = await axios.post("https://fcm.googleapis.com/fcm/send", fcmPayload, {
+        headers: fcmHeaders,
+        timeout: 10000
+      });
+
+      console.log(`✅ [FCM API] Legacy dispatch successful. Google Response:`, fcmResponse.data);
+      return res.json({
+        success: true,
+        status: "dispatched",
+        details: fcmResponse.data
+      });
+    } catch (error: any) {
+      console.error("❌ [FCM API] Error dispatching push notification:", error.response?.data || error.message);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to dispatch notification to mobile",
+        details: error.response?.data || error.message
+      });
+    }
   });
 
   // Catch-all for /api/* to prevent returning HTML

@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "687502592759",
+    "project_id": "droub-alsalamah",
+    "storage_bucket": "droub-alsalamah.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:687502592759:android:00f5f8d69cb886a1f2a1f2",
+        "android_client_info": {
+          "package_name": "com.droub.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "687502592759-i5f4pg4q6oh2natde8tdphem591ibq4a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.droub.app",
+            "certificate_hash": "c5d39ef2faee6160d0d0d4d32860176d4b40ea02"
+          }
+        },
+        {
+          "client_id": "687502592759-8eqq1pmr97ge9tb92bac4b6f4dvbmig7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVeDrVQMEFP9AWJjHopjOiLbY2l8Zk1LI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "687502592759-8eqq1pmr97ge9tb92bac4b6f4dvbmig7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

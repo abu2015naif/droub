@@ -36,7 +36,8 @@ import {
   RefreshCw,
   ChevronRight,
   ShoppingBag,
-  ShoppingCart
+  ShoppingCart,
+  Search
 } from "lucide-react";
 import { db, collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, query, where, getDocs, handleFirestoreError, OperationType, setDoc, getDoc } from "../firebase";
 import { Product, Showroom, BankDetails, Employee } from "../types";
@@ -98,7 +99,8 @@ interface Banner {
 }
 
 export default function AdminDashboard({ userRole, userPermissions }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'home' | 'payment_methods' | 'seo' | 'analytics'>('orders');
+  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'home' | 'payment_methods' | 'seo' | 'analytics' | 'devices'>('orders');
+  const [devices, setDevices] = useState<any[]>([]);
   
   const [telemetrySessions, setTelemetrySessions] = useState<any[]>([]);
   const [productTelemetry, setProductTelemetry] = useState<any[]>([]);
@@ -120,6 +122,7 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       case 'home': return userPermissions.settings; // Use settings permission for home settings
       case 'payment_methods': return userPermissions.settings; // Use settings permission for payment methods
       case 'seo': return true; // SEO directory is accessible to all staff
+      case 'devices': return true; // Devices/notifications tab is accessible to all staff
       default: return false;
     }
   };
@@ -127,8 +130,8 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   useEffect(() => {
     // If current tab is not allowed, switch to first allowed tab
     if (!hasPermission(activeTab)) {
-      const tabs: ('products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'payment_methods' | 'seo' | 'analytics')[] = 
-        ['orders', 'products', 'employees', 'shipping', 'banners', 'showrooms', 'settings', 'payment_methods', 'seo', 'analytics'];
+      const tabs: ('products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'payment_methods' | 'seo' | 'analytics' | 'devices')[] = 
+        ['orders', 'products', 'employees', 'shipping', 'banners', 'showrooms', 'settings', 'payment_methods', 'seo', 'analytics', 'devices'];
       const firstAllowed = tabs.find(t => hasPermission(t));
       if (firstAllowed) setActiveTab(firstAllowed);
     }
@@ -142,6 +145,78 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   const [banners, setBanners] = useState<Banner[]>([]);
   const [showrooms, setShowrooms] = useState<Showroom[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankDetails[]>([]);
+  
+  // States for Devices & Notifications Tab
+  const [notiTitle, setNotiTitle] = useState("");
+  const [notiBody, setNotiBody] = useState("");
+  const [sendTarget, setSendTarget] = useState<'all' | 'single'>('all');
+  const [selectedDeviceToken, setSelectedDeviceToken] = useState("");
+  const [isSendingNoti, setIsSendingNoti] = useState(false);
+  const [notiLogs, setNotiLogs] = useState<any[]>([]);
+
+  const handleDeleteDevice = async (id: string) => {
+    if (window.confirm("هل أنت متأكد من رغبتك في إزالة هذا الجهاز تلقائياً من نظام الإشعارات؟")) {
+      try {
+        await deleteDoc(doc(db, "devices", id));
+        alert("تم حذف تسجيل الجهاز وإيقاف الإشعارات له بنجاح.");
+      } catch (error) {
+        console.error("Error deleting device:", error);
+        alert("فشل حذف الجهاز: صلاحيات غير كافية");
+      }
+    }
+  };
+
+  const handleSendNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notiTitle || !notiBody) {
+      alert("الرجاء إدخال عنوان الإشعار ونص الرسالة");
+      return;
+    }
+    if (sendTarget === 'single' && !selectedDeviceToken) {
+      alert("الرجاء اختيار جهاز مستهدف");
+      return;
+    }
+
+    setIsSendingNoti(true);
+    try {
+      // 1. Write log to Firestore
+      await addDoc(collection(db, "notifications"), {
+        title: notiTitle,
+        body: notiBody,
+        target: sendTarget === 'all' ? 'all' : selectedDeviceToken,
+        targetDeviceModel: sendTarget === 'single' ? (devices.find(d => d.fcmToken === selectedDeviceToken)?.deviceModel || "Android Device") : "الجميع",
+        createdAt: new Date().toISOString(),
+        status: "sent"
+      });
+
+      // 2. Trigger Node Express proxy service for FCM
+      const response = await fetch("/api/send-notification", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          target: sendTarget,
+          token: selectedDeviceToken,
+          title: notiTitle,
+          body: notiBody
+        })
+      });
+
+      const resData = await response.json();
+      console.log("FCM trigger response:", resData);
+
+      alert("تم إرسال الإشعار بنجاح! وسوف يتلقى الهاتف التنبيه فوراً.");
+      setNotiTitle("");
+      setNotiBody("");
+    } catch (err: any) {
+      console.error("Error trigger notification backend:", err);
+      alert("تم توثيق الإشعار بنجاح في قاعدة البيانات!");
+    } finally {
+      setIsSendingNoti(false);
+    }
+  };
+
   const [paymentGateways, setPaymentGateways] = useState<any[]>([]);
   const [isEditingPayment, setIsEditingPayment] = useState<any | null>(null);
   const [isEditingProduct, setIsEditingProduct] = useState<any | null>(null);
@@ -162,6 +237,27 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   const [loading, setLoading] = useState(false);
   const [productImageFile, setProductImageFile] = useState<File | null>(null);
   const [homeSettings, setHomeSettings] = useState<{ productsPerPage: number }>({ productsPerPage: 8 });
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void | Promise<void>;
+  } | null>(null);
+
+  const confirmDelete = (title: string, message: string, onConfirmAction: () => void | Promise<void>) => {
+    setDeleteConfirmation({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: async () => {
+        try {
+          await onConfirmAction();
+        } catch (err) {
+          console.error("Error running delete action:", err);
+        }
+      }
+    });
+  };
 
   const fetchHomeSettings = async () => {
     try {
@@ -314,25 +410,30 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     });
   };
 
-  const deleteShippingMethod = async (zoneId: number, instanceId: number) => {
-    if (!window.confirm("هل أنت متأكد من حذف طريقة الشحن هذه؟")) return;
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/shipping/methods/${zoneId}/${instanceId}`, {
-        method: 'DELETE'
-      });
-      if (response.ok) {
-        await fetchShippingMethods();
-      } else {
-        const err = await response.json();
-        alert("فشل حذف طريقة الشحن: " + (err.details?.message || err.error));
+  const deleteShippingMethod = (zoneId: number, instanceId: number) => {
+    confirmDelete(
+      "حذف طريقة الشحن",
+      "هل أنت متأكد من حذف طريقة الشحن هذه؟",
+      async () => {
+        setLoading(true);
+        try {
+          const response = await fetch(`/api/shipping/methods/${zoneId}/${instanceId}`, {
+            method: 'DELETE'
+          });
+          if (response.ok) {
+            await fetchShippingMethods();
+          } else {
+            const err = await response.json();
+            alert("فشل حذف طريقة الشحن: " + (err.details?.message || err.error));
+          }
+        } catch (error) {
+          console.error("Error deleting shipping method:", error);
+          alert("حدث خطأ أثناء الاتصال بالخادم");
+        } finally {
+          setLoading(false);
+        }
       }
-    } catch (error) {
-      console.error("Error deleting shipping method:", error);
-      alert("حدث خطأ أثناء الاتصال بالخادم");
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const fetchPaymentGateways = async () => {
@@ -526,12 +627,32 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       handleFirestoreError(error, OperationType.GET, "product_telemetry");
     });
 
+    // Listen to registered devices
+    const devicesRef = collection(db, "devices");
+    const unsubDevices = onSnapshot(devicesRef, (snapshot) => {
+      const data = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+      setDevices(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, "devices");
+    });
+
+    // Listen to sent notifications logs
+    const notisRef = collection(db, "notifications");
+    const unsubNotis = onSnapshot(notisRef, (snapshot) => {
+      const data = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+      setNotiLogs(data.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+    }, (error) => {
+      console.warn("Could not load notifications logs:", error);
+    });
+
     return () => {
       unsubOrders();
       unsubUsers();
       unsubBanners();
       unsubSessions();
       unsubProdTelemetry();
+      unsubDevices();
+      unsubNotis();
     };
   }, []);
 
@@ -559,12 +680,12 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     return () => unsubBankAccounts();
   }, []);
 
-  // Self-healing check for any order stuck in 'awaiting-payment' status (sync with WooCommerce)
+  // Self-healing check for any order stuck in 'awaiting-payment' status (sync with WooCommerce & Telr)
   useEffect(() => {
     if (!orders || orders.length === 0) return;
 
     const pendingSyncOrders = orders.filter(
-      o => o.status === 'awaiting-payment' && o.wcOrderId && !isNaN(Number(o.wcOrderId))
+      o => o.status === 'awaiting-payment'
     );
 
     if (pendingSyncOrders.length === 0) return;
@@ -573,31 +694,60 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
 
     pendingSyncOrders.forEach(async (order) => {
       const orderIdKey = order.id;
-      // Throttling: only check once every 30 seconds per order to avoid rate limits
-      if (syncCheckedObj[orderIdKey] && Date.now() - syncCheckedObj[orderIdKey] < 30000) {
+      // Throttling: only check once every 60 seconds per order to avoid rate limits
+      if (syncCheckedObj[orderIdKey] && Date.now() - syncCheckedObj[orderIdKey] < 60000) {
         return;
       }
 
       syncCheckedObj[orderIdKey] = Date.now();
       (window as any).__syncCheckedOrders = syncCheckedObj;
 
-      try {
-        console.log(`📡 Background syncing WooCommerce status for Order #${order.id} (WC #${order.wcOrderId})...`);
-        const res = await fetch(`/api/orders/${order.wcOrderId}`);
-        if (res.ok) {
-          const wcOrderData = await res.json();
-          const wcStatus = wcOrderData.status; // e.g. 'processing', 'completed', etc.
+      let resolvedViaTelr = false;
 
-          if (wcStatus && wcStatus !== 'pending' && wcStatus !== 'awaiting-payment') {
-            console.log(`🔄 Automatically updating Firestore Order #${order.id} status to match WooCommerce status '${wcStatus}'`);
-            await updateDoc(doc(db, "orders", order.id), {
-              status: wcStatus === 'on-hold' ? 'pending' : wcStatus,
-              paidAt: (wcStatus === 'processing' || wcStatus === 'completed') ? new Date().toISOString() : null
-            });
+      // 1. First Priority: Direct Telr Background Check (if order has telrRef stored in Firestore)
+      if (order.telrRef) {
+        try {
+          console.log(`📡 Background checking Telr status for Order ID #${order.id} (Telr Ref #${order.telrRef})...`);
+          const checkUrl = `/api/payment/telr/check/${order.telrRef}`;
+          const checkRes = await fetch(checkUrl);
+          if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            const code = checkData?.order?.status?.code;
+            const isPaid = code === 3 || code === 2 || String(code) === "3" || String(code) === "2";
+            
+            if (isPaid) {
+              console.log(`✅ [Telr Sync] Order #${order.id} is confirmed paid on Telr! Auto-syncing status...`);
+              await updateOrderStatus(order.id, 'processing');
+              resolvedViaTelr = true;
+            } else {
+              console.log(`ℹ️ [Telr Sync] Order #${order.id} checked on Telr. Code: ${code}. Not paid yet.`);
+            }
           }
+        } catch (telrSyncErr) {
+          console.error(`⚠️ Failed to background sync Telr status for Order #${order.id}:`, telrSyncErr);
         }
-      } catch (err) {
-        console.error(`⚠️ Failed to self-heal status for Order #${order.id}:`, err);
+      }
+
+      // 2. Second Priority: Fallback WooCommerce Background Sync (if not already resolved and wcOrderId exists)
+      if (!resolvedViaTelr && order.wcOrderId && !isNaN(Number(order.wcOrderId))) {
+        try {
+          console.log(`📡 Background syncing WooCommerce status for Order #${order.id} (WC #${order.wcOrderId})...`);
+          const res = await fetch(`/api/orders/${order.wcOrderId}`);
+          if (res.ok) {
+            const wcOrderData = await res.json();
+            const wcStatus = wcOrderData.status; // e.g. 'processing', 'completed', etc.
+
+            if (wcStatus && wcStatus !== 'pending' && wcStatus !== 'awaiting-payment') {
+              console.log(`🔄 Automatically updating Firestore Order #${order.id} status to match WooCommerce status '${wcStatus}'`);
+              await updateDoc(doc(db, "orders", order.id), {
+                status: wcStatus === 'on-hold' ? 'pending' : wcStatus,
+                paidAt: (wcStatus === 'processing' || wcStatus === 'completed') ? new Date().toISOString() : null
+              });
+            }
+          }
+        } catch (err) {
+          console.error(`⚠️ Failed to self-heal status for Order #${order.id}:`, err);
+        }
       }
     });
   }, [orders]);
@@ -629,13 +779,18 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     }
   };
 
-  const handleDeleteShowroom = async (id: string) => {
-    if (!window.confirm("هل أنت متأكد من حذف هذا المعرض؟")) return;
-    try {
-      await deleteDoc(doc(db, "showrooms", id));
-    } catch (error) {
-      console.error("Error deleting showroom:", error);
-    }
+  const handleDeleteShowroom = (id: string) => {
+    confirmDelete(
+      "حذف المعرض",
+      "هل أنت متأكد من حذف هذا المعرض؟ لا يمكن التراجع عن هذا الإجراء.",
+      async () => {
+        try {
+          await deleteDoc(doc(db, "showrooms", id));
+        } catch (error) {
+          console.error("Error deleting showroom:", error);
+        }
+      }
+    );
   };
 
   const handleSaveBankAccount = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -667,15 +822,20 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     }
   };
 
-  const handleDeleteBankAccount = async (id: string) => {
-    if (!window.confirm("هل أنت متأكد من حذف هذا الحساب البنكي؟")) return;
-    try {
-      await deleteDoc(doc(db, "bank_accounts", id));
-      alert("تم حذف الحساب بنجاح");
-    } catch (error) {
-      console.error("Error deleting bank account:", error);
-      alert("حدث خطأ أثناء حذف الحساب");
-    }
+  const handleDeleteBankAccount = (id: string) => {
+    confirmDelete(
+      "حذف الحساب البنكي",
+      "هل أنت متأكد من حذف هذا الحساب البنكي؟ لا يمكن التراجع عن هذا الإجراء.",
+      async () => {
+        try {
+          await deleteDoc(doc(db, "bank_accounts", id));
+          alert("تم حذف الحساب بنجاح");
+        } catch (error) {
+          console.error("Error deleting bank account:", error);
+          alert("حدث خطأ أثناء حذف الحساب");
+        }
+      }
+    );
   };
 
   const handleSaveBanner = async (e: React.FormEvent) => {
@@ -712,13 +872,21 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     }
   };
 
-  const deleteBanner = async (id: string) => {
-    if (!window.confirm("هل أنت متأكد من حذف هذا البنر؟")) return;
-    try {
-      await deleteDoc(doc(db, "banners", id));
-    } catch (error) {
-      console.error("Error deleting banner:", error);
-    }
+  const deleteBanner = (id: string) => {
+    confirmDelete(
+      "حذف البنر",
+      "هل أنت متأكد من أنك تريد حذف هذا البنر نهائياً؟ لا يمكن التراجع عن هذا الإجراء.",
+      async () => {
+        const path = `banners/${id}`;
+        try {
+          await deleteDoc(doc(db, "banners", id));
+        } catch (error) {
+          console.error("Error deleting banner:", error);
+          alert("حدث خطأ أثناء حذف البنر");
+          handleFirestoreError(error, OperationType.WRITE, path);
+        }
+      }
+    );
   };
 
   const updateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
@@ -941,29 +1109,33 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     }
   };
 
-  const deleteProduct = async (id: string) => {
-    if (!window.confirm("هل أنت متأكد من حذف هذا المنتج نهائياً من ووكومرس؟")) return;
-    
-    setLoading(true);
-    try {
-      console.log(`📡 Sending delete request for product ${id}...`);
-      const response = await fetch(`/api/products/${id}`, { method: 'DELETE' });
-      
-      if (response.ok) {
-        console.log(`✅ Product ${id} deleted successfully`);
-        alert("تم حذف المنتج بنجاح");
-        await fetchProducts();
-      } else {
-        const err = await response.json();
-        console.error(`❌ Failed to delete product ${id}:`, err);
-        alert("فشل حذف المنتج: " + (err.details?.message || err.error || "خطأ غير معروف"));
+  const deleteProduct = (id: string) => {
+    confirmDelete(
+      "حذف المنتج",
+      "هل أنت متأكد من حذف هذا المنتج نهائياً من ووكومرس؟",
+      async () => {
+        setLoading(true);
+        try {
+          console.log(`📡 Sending delete request for product ${id}...`);
+          const response = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+          
+          if (response.ok) {
+            console.log(`✅ Product ${id} deleted successfully`);
+            alert("تم حذف المنتج بنجاح");
+            await fetchProducts();
+          } else {
+            const err = await response.json();
+            console.error(`❌ Failed to delete product ${id}:`, err);
+            alert("فشل حذف المنتج: " + (err.details?.message || err.error || "خطأ غير معروف"));
+          }
+        } catch (error) {
+          console.error("❌ Error deleting product:", error);
+          alert("حدث خطأ أثناء الاتصال بالخادم");
+        } finally {
+          setLoading(false);
+        }
       }
-    } catch (error) {
-      console.error("❌ Error deleting product:", error);
-      alert("حدث خطأ أثناء الاتصال بالخادم");
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const updateEmployeeRole = async (uid: string, newRole: Employee['role']) => {
@@ -1036,34 +1208,38 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     }
   };
 
-  const handleDeleteEmployee = async (uid: string) => {
+  const handleDeleteEmployee = (uid: string) => {
     const emp = employees.find(e => e.uid === uid);
     if (!emp) return;
 
-    if (!window.confirm(`هل أنت متأكد من حذف الموظف ${emp.displayName || emp.email}؟`)) return;
-    
-    setLoading(true);
-    const path = `users/${uid}`;
-    try {
-      // If it's a pending user (not registered yet), delete the doc
-      // If it's a registered user, we just revoke their staff role
-      const userDoc = await getDoc(doc(db, "users", uid));
-      const userData = userDoc.data();
-      
-      if (userData?.isPending) {
-        await deleteDoc(doc(db, "users", uid));
-      } else {
-        await updateDoc(doc(db, "users", uid), { 
-          role: 'customer', 
-          permissions: null 
-        });
+    confirmDelete(
+      "حذف الموظف",
+      `هل أنت متأكد من حذف الموظف ${emp.displayName || emp.email}؟`,
+      async () => {
+        setLoading(true);
+        const path = `users/${uid}`;
+        try {
+          // If it's a pending user (not registered yet), delete the doc
+          // If it's a registered user, we just revoke their staff role
+          const userDoc = await getDoc(doc(db, "users", uid));
+          const userData = userDoc.data();
+          
+          if (userData?.isPending) {
+            await deleteDoc(doc(db, "users", uid));
+          } else {
+            await updateDoc(doc(db, "users", uid), { 
+              role: 'customer', 
+              permissions: null 
+            });
+          }
+          alert("تم حذف الموظف بنجاح");
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, path);
+        } finally {
+          setLoading(false);
+        }
       }
-      alert("تم حذف الموظف بنجاح");
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   // Analytics Filter state
@@ -1348,6 +1524,16 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                 >
                   <FileText size={20} />
                   <span className="font-bold">دليل الكلمات (SEO)</span>
+                </button>
+              )}
+
+              {hasPermission('devices') && (
+                <button 
+                  onClick={() => setActiveTab('devices')}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'devices' ? 'bg-red-600 text-white shadow-lg shadow-red-100' : 'hover:bg-gray-50 text-gray-600'}`}
+                >
+                  <Smartphone size={20} />
+                  <span className="font-bold">الأجهزة والإشعارات</span>
                 </button>
               )}
             </nav>
@@ -2700,6 +2886,325 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                 />
               </motion.div>
             )}
+
+            {activeTab === 'devices' && (
+              <motion.div 
+                key="devices"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-8 text-right"
+                dir="rtl"
+              >
+                {/* Dashboard Title */}
+                <div className="flex flex-col gap-1">
+                  <h1 className="text-2xl font-bold text-gray-900">إدارة التطبيق والأجهزة والإشعارات</h1>
+                  <p className="text-gray-500 text-sm">
+                    تتبع الأجهزة الذكية التي تم تحميل تطبيق الأندرويد عليها وبث الإشعارات الجماعية أو الفردية للأعضاء مجاناً.
+                  </p>
+                </div>
+
+                {/* Dashboard Stats Block */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+                    <div>
+                      <span className="text-gray-400 text-xs block mb-1 font-bold">إجمالي الأجهزة المسجلة</span>
+                      <h2 className="text-3xl font-extrabold text-gray-900">{devices.length}</h2>
+                    </div>
+                    <div className="p-4 bg-red-50 text-red-600 rounded-2xl">
+                      <Smartphone size={24} />
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+                    <div>
+                      <span className="text-gray-400 text-xs block mb-1 font-bold font-sans">الأجهزة المربوطة لعضو</span>
+                      <h2 className="text-3xl font-extrabold text-green-600">
+                        {devices.filter(d => d.userId).length}
+                      </h2>
+                    </div>
+                    <div className="p-4 bg-green-50 text-green-600 rounded-2xl">
+                      <Users size={24} />
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+                    <div>
+                      <span className="text-gray-400 text-xs block mb-1 font-bold">إشعارات تم بثها</span>
+                      <h2 className="text-3xl font-extrabold text-blue-600">{notiLogs.length}</h2>
+                    </div>
+                    <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl">
+                      <MessageCircle size={24} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  {/* Left Column: Register list */}
+                  <div className="lg:col-span-12 xl:col-span-7 space-y-6">
+                    <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                      <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                        <h2 className="font-bold text-gray-900">سجل الأجهزة المتصلة</h2>
+                        <span className="text-xs bg-red-100 text-red-600 px-3 py-1 rounded-full font-bold">
+                          أندرويد WebView
+                        </span>
+                      </div>
+
+                      <div className="divide-y divide-gray-50 max-h-[500px] overflow-y-auto">
+                        {devices.map((device, index) => (
+                          <div key={device.id || index} className="p-6 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:bg-gray-50/50 transition-colors">
+                            <div className="flex items-start gap-4">
+                              <div className="p-3 bg-red-50 text-red-600 rounded-xl mt-1">
+                                <Smartphone size={20} />
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-bold text-gray-900">{device.deviceModel || "هاتف أندرويد غامض"}</h3>
+                                  <span className="text-[10px] bg-green-50 text-green-600 font-bold px-2 py-0.5 rounded-full">
+                                    {device.platform || "android"}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col gap-1 text-xs text-gray-400 font-medium">
+                                  <div className="flex items-center gap-1 font-mono text-[10px]">
+                                    <span>FCM-ID:</span>
+                                    <span className="bg-gray-100 px-1 py-0.5 rounded block max-w-sm truncate text-gray-600">
+                                      {device.fcmToken}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="font-sans">آخر اتصال:</span>
+                                    <span className="text-gray-600">
+                                      {(() => {
+                                        if(!device.lastActiveAt) return "غير معلوم";
+                                        try {
+                                          const date = new Date(device.lastActiveAt);
+                                          const now = new Date();
+                                          const diffMs = now.getTime() - date.getTime();
+                                          const diffMins = Math.floor(diffMs / 60000);
+                                          if (diffMins < 1) return "الآن";
+                                          if (diffMins < 60) return `منذ ${diffMins} دقيقة`;
+                                          const diffHours = Math.floor(diffMins / 60);
+                                          if (diffHours < 24) return `منذ ${diffHours} ساعة`;
+                                          const diffDays = Math.floor(diffHours / 24);
+                                          return `منذ ${diffDays} يوم`;
+                                        } catch {
+                                          return "سابقاً";
+                                        }
+                                      })()}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex sm:flex-col items-end gap-2 shrink-0">
+                              {device.userId ? (
+                                <div className="flex items-center gap-1.5 bg-green-50/80 text-green-700 px-3 py-1.5 rounded-xl border border-green-100 text-xs">
+                                  <Users size={14} />
+                                  <div className="flex flex-col text-right">
+                                    <span className="font-bold">مربوط بحساب</span>
+                                    <span className="text-[9px] text-green-600 font-mono select-all">{device.userEmail}</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-xs bg-yellow-50 text-yellow-600 border border-yellow-100 px-3 py-1 rounded-xl">
+                                  غير مربوط - تصفح سريع
+                                </span>
+                              )}
+
+                              <div className="flex gap-2 mt-2">
+                                <button 
+                                  onClick={() => {
+                                    setSendTarget('single');
+                                    setSelectedDeviceToken(device.fcmToken);
+                                    alert(`تم اختيار الجهاز للرسائل الفردية بنجاح.`);
+                                  }}
+                                  className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-100 font-bold hover:bg-red-100 hover:text-red-700 rounded-lg transition-colors flex items-center gap-1"
+                                >
+                                  <MessageCircle size={12} />
+                                  <span>توجيه رسالة</span>
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteDevice(device.id)}
+                                  className="p-1 px-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+
+                        {devices.length === 0 && (
+                          <div className="p-12 text-center text-gray-400">
+                            <Smartphone size={40} className="mx-auto mb-3 text-gray-200" />
+                            <p className="text-sm">لم يسجل أي مستخدم دخوله من التطبيق بعد.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Broadcast Composer */}
+                  <div className="lg:col-span-12 xl:col-span-5 space-y-6">
+                    <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
+                      <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                        <span className="p-1.5 bg-red-50 text-red-600 rounded-lg"><MessageCircle size={18} /></span>
+                        <span>بث وتوجيه إشعار جديد</span>
+                      </h2>
+
+                      <form onSubmit={handleSendNotification} className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 block">نوع البث المستهدف</label>
+                          <div className="grid grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setSendTarget('all')}
+                              className={`py-2.5 px-4 rounded-xl border text-sm font-bold transition-all ${
+                                sendTarget === 'all' 
+                                  ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-100' 
+                                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                              }`}
+                            >
+                              الجميع (جماعي)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSendTarget('single')}
+                              className={`py-2.5 px-4 rounded-xl border text-sm font-bold transition-all ${
+                                sendTarget === 'single' 
+                                  ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-100' 
+                                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                              }`}
+                            >
+                              جهاز محدد (فردي)
+                            </button>
+                          </div>
+                        </div>
+
+                        {sendTarget === 'single' && (
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-gray-500 block">اختر الجهاز المستهدف</label>
+                            {devices.length > 0 ? (
+                              <select
+                                value={selectedDeviceToken}
+                                onChange={(e) => setSelectedDeviceToken(e.target.value)}
+                                className="w-full p-3 rounded-2xl border border-gray-200 bg-white text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none"
+                              >
+                                <option value="">-- اختر جهاز مستهدف --</option>
+                                {devices.map((d, index) => (
+                                  <option key={d.id || index} value={d.fcmToken}>
+                                    {d.deviceModel} ({d.userEmail || "زائر"})
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <div className="text-xs text-red-500 bg-red-50 p-3 rounded-xl border border-red-100 font-bold">
+                                لا يوجد أجهزة مسجلة حالياً لبث الإشعار الفردي لها.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 block">عنوان الإشعار</label>
+                          <input
+                            type="text"
+                            value={notiTitle}
+                            onChange={(e) => setNotiTitle(e.target.value)}
+                            placeholder="مثال: خصومات حصرية بانتظارك! 🎉"
+                            className="w-full p-3 rounded-2xl border border-gray-200 text-sm focus:border-red-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 block font-sans">محتوى الإشعار</label>
+                          <textarea
+                            value={notiBody}
+                            onChange={(e) => setNotiBody(e.target.value)}
+                            placeholder="مثال: خصم 20% لفترة محدودة لجميع الأقسام، تسوق الآن ووفر!"
+                            rows={3}
+                            className="w-full p-3 rounded-2xl border border-gray-200 text-sm focus:border-red-500 focus:outline-none resize-none"
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={isSendingNoti}
+                          className="w-full py-3 bg-red-600 text-white font-bold rounded-2xl hover:bg-red-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-100 disabled:opacity-50"
+                        >
+                          {isSendingNoti ? (
+                            <span>جاري معالجة البث الفوري...</span>
+                          ) : (
+                            <>
+                              <span>إرسال الإشعار الآن</span>
+                              <ChevronRight size={18} className="rotate-180" />
+                            </>
+                          )}
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+
+                {/* historical notifications table */}
+                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden p-6 mt-8">
+                  <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <span className="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><MessageCircle size={18} /></span>
+                    <span>سجل الإشعارات المرسلة</span>
+                  </h2>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right divide-y divide-gray-100 text-sm">
+                      <thead className="bg-gray-50 text-gray-500">
+                        <tr>
+                          <th className="p-4 font-bold">العنوان</th>
+                          <th className="p-4 font-bold">المحتوى</th>
+                          <th className="p-4 font-bold">المرسل إليه</th>
+                          <th className="p-4 font-bold">تاريخ الإرسال</th>
+                          <th className="p-4 font-bold text-left">الحالة</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50 text-gray-600">
+                        {notiLogs.map((log) => (
+                          <tr key={log.id} className="hover:bg-gray-50/30 transition-colors">
+                            <td className="p-4 font-bold text-gray-900">{log.title}</td>
+                            <td className="p-4 text-xs text-gray-500 max-w-sm truncate">{log.body}</td>
+                            <td className="p-4">
+                              {log.target === 'all' ? (
+                                <span className="bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full text-xs font-bold">
+                                  الجميع جماعي
+                                </span>
+                              ) : (
+                                <span className="bg-blue-50 text-blue-600 px-2.5 py-1 rounded-full text-xs font-mono font-bold">
+                                  {log.targetDeviceModel || "جهاز محدد"}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4 text-xs text-gray-400">
+                              {log.createdAt ? new Date(log.createdAt).toLocaleString('ar-SA') : "غير معلوم"}
+                            </td>
+                            <td className="p-4 text-left">
+                              <span className="text-[10px] bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-bold">
+                                تم توثيقه
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+
+                        {notiLogs.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="p-12 text-center text-gray-400 text-xs">
+                              لا يوجد أي سجلات لإشعارات مرسلة سابقاً.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </motion.div>
+            )}
           </AnimatePresence>
         </main>
       </div>
@@ -2985,8 +3490,52 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                     </div>
 
                     {selectedOrder.status === 'awaiting-payment' && (
-                      <div className="pt-4 border-t border-gray-200 space-y-2">
-                        <div className="text-xs text-gray-500 font-bold mb-1">التحقق اليدوي التلقائي من بوابة الدفع (تيلر):</div>
+                      <div className="pt-4 border-t border-gray-200 space-y-3">
+                        <div className="text-xs text-gray-500 font-bold">التحقق والربط المباشر مع بوابة الدفع (تيلر):</div>
+                        
+                        {selectedOrder.telrRef ? (
+                          <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl space-y-2">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-gray-500 font-medium">رقم مرجع تيلر المحفوظ:</span>
+                              <span className="font-mono font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded border">{selectedOrder.telrRef}</span>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={async () => {
+                                try {
+                                  setLoading(true);
+                                  const checkUrl = `/api/payment/telr/check/${selectedOrder.telrRef}`;
+                                  const checkRes = await fetch(checkUrl);
+                                  const checkData = await checkRes.json();
+                                  
+                                  const code = checkData?.order?.status?.code;
+                                  const isPaid = code === 3 || code === 2 || String(code) === "3" || String(code) === "2";
+                                  
+                                  if (isPaid) {
+                                    await updateOrderStatus(selectedOrder.id, 'processing');
+                                    alert("✅ تم تأكيد عملية الدفع بنجاح! تم تحديث حالة الطلب إلى 'قيد التنفيذ' وتحديث نظامي WooCommerce و Firestore تلقائياً.");
+                                  } else {
+                                    const errorMsg = checkData?.order?.status?.text || "المعاملة غير مدفوعة بعد";
+                                    alert(`⚠️ نتيجة التحقق من تيلر: ${errorMsg} (رمز الحالة: ${code || 'غير معروف'}). لم يتم تحديث الطلب.`);
+                                  }
+                                } catch (err: any) {
+                                  console.error(err);
+                                  alert("❌ فشل الاتصال ببوابة تيلر للتحقق: " + err.message);
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }}
+                              className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors disabled:opacity-50"
+                            >
+                              <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+                              التحقق الفوري بالمرجع المحفوظ 🔄
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-gray-400 italic">⚠️ لا يوجد رقم مرجع تيلر محفوظ لهذا الطلب حالياً (طلب قديم).</div>
+                        )}
+
                         <button
                           type="button"
                           disabled={loading}
@@ -3002,12 +3551,11 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                               const checkData = await checkRes.json();
                               
                               const code = checkData?.order?.status?.code;
-                              const isPaid = code === 3 || code === 2;
+                              const isPaid = code === 3 || code === 2 || String(code) === "3" || String(code) === "2";
                               
                               if (isPaid) {
-                                // Update WooCommerce and Firestore using our proven updateOrderStatus function
                                 await updateOrderStatus(selectedOrder.id, 'processing');
-                                alert("✅ تم العثور على المعاملة مدفوعة بنجاح! تم تحديث حالة الطلب إلى 'قيد التنفيذ' وتأكيد عملية الدفع وتوحيدها مابين السيرفر وسلة المشتريات.");
+                                alert("✅ تم العثور على المعاملة مدفوعة بنجاح! تم تحديث حالة الطلب إلى 'قيد التنفيذ' وتأكيد عملية الدفع وتحديث نظامي WooCommerce و Firestore تلقائياً.");
                               } else {
                                 const errorMsg = checkData?.order?.status?.text || "الحالة غير مدفوعة أو المعاملة غير موجودة";
                                 alert(`⚠️ نتيجة التحقق من تيلر: ${errorMsg} (رمز الحالة: ${code || 'غير معروف'}). لم يتم تحديث الطلب.`);
@@ -3019,10 +3567,10 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                               setLoading(false);
                             }
                           }}
-                          className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors disabled:opacity-50"
+                          className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-3 rounded-lg text-xs transition-colors disabled:opacity-50"
                         >
-                          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-                          التحقق والربط المباشر من تيلr (للطلبات السابقة والحالية)
+                          <Search size={12} />
+                          إدخال رقم المعاملة يدوياً للربط والتحقق (لأنظمة تيلر السابقة)
                         </button>
                       </div>
                     )}
@@ -3461,6 +4009,53 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                   {isEditingProduct ? 'تحديث في ووكومرس' : 'إضافة إلى ووكومرس'}
                 </button>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom Confirmation Modal */}
+      <AnimatePresence>
+        {deleteConfirmation && deleteConfirmation.isOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative overflow-hidden text-right"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3 mb-4 text-red-600">
+                <div className="p-3 bg-red-50 rounded-2xl">
+                  <AlertTriangle size={24} />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900">{deleteConfirmation.title}</h3>
+              </div>
+
+              <p className="text-gray-600 mb-6 leading-relaxed text-sm">
+                {deleteConfirmation.message}
+              </p>
+
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmation(null)}
+                  className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const confirmAction = deleteConfirmation.onConfirm;
+                    setDeleteConfirmation(null);
+                    await confirmAction();
+                  }}
+                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition-colors shadow-lg shadow-red-100 cursor-pointer"
+                >
+                  تأكيد الحذف
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

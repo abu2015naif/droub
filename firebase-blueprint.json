@@ -148,6 +148,23 @@
           }
         }
       }
+    },
+    "Device": {
+      "title": "Device",
+      "description": "Android device registered for push notifications",
+      "type": "object",
+      "properties": {
+        "fcmToken": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "deviceModel": { "type": "string" },
+        "platform": { "type": "string" },
+        "osVersion": { "type": "string" },
+        "appVersion": { "type": "string" },
+        "lastActiveAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fcmToken", "platform", "lastActiveAt"]
     }
   },
   "firestore": {
@@ -190,6 +207,10 @@
     "/product_telemetry/{productId}": {
       "schema": "ProductTelemetry",
       "description": "Track views and clicks for product-specific metrics"
+    },
+    "/devices/{deviceId}": {
+      "schema": "Device",
+      "description": "Registered devices for push notifications (FCM tokens)"
     }
   }
 }

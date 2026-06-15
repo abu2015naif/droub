@@ -12,24 +12,26 @@ service cloud.firestore {
     }
     function isAdmin() {
       return isAuthenticated() && (
-        (request.auth.token.email == "abu2015naif@gmail.com") ||
+        ('email' in request.auth.token && request.auth.token.email == "abu2015naif@gmail.com") ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
     }
 
+    function checkUserPermission(userData, permission) {
+      return userData.role == 'admin' ||
+             (
+               (!('permissions' in userData) || userData.permissions == null) ?
+               (userData.role in ['manager', 'staff']) :
+               (userData.permissions.get(permission, false) == true)
+             );
+    }
+
     function hasPermission(permission) {
       return isAuthenticated() && (
-        (request.auth.token.email == "abu2015naif@gmail.com") ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (
-            (!('permissions' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions == null) ?
-            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['manager', 'staff']) :
-            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions.get(permission, false) == true)
-          )
-        ))
+        ('email' in request.auth.token && request.auth.token.email == "abu2015naif@gmail.com") ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         checkUserPermission(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, permission))
       );
     }
 
@@ -67,22 +69,23 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isAuthenticated();
       // Master admin can do anything to any user
-      allow write: if isOwner(userId) || (request.auth.token.email == "abu2015naif@gmail.com");
+      allow write: if isOwner(userId) || ('email' in request.auth.token && request.auth.token.email == "abu2015naif@gmail.com");
       
       match /favorites/{favoriteId} {
-        allow read, write: if isOwner(userId) || (request.auth.token.email == "abu2015naif@gmail.com");
+        allow read, write: if isOwner(userId) || ('email' in request.auth.token && request.auth.token.email == "abu2015naif@gmail.com");
       }
     }
 
     match /products/{productId} {
       allow read: if true;
-      allow write: if hasPermission('products');
+      allow write: if isAdmin() || hasPermission('products');
     }
 
     match /orders/{orderId} {
       allow create: if true;
       allow read: if true;
       allow update: if 
+        isAdmin() || 
         hasPermission('orders') || 
         (
           resource.data.status == "awaiting-payment" &&
@@ -90,22 +93,23 @@ service cloud.firestore {
           request.resource.data.items == resource.data.items &&
           request.resource.data.userId == resource.data.userId
         );
-      allow delete: if hasPermission('orders');
+      allow delete: if isAdmin() || hasPermission('orders');
     }
 
     match /banners/{bannerId} {
       allow read: if true;
-      allow write: if hasPermission('banners') && isValidBanner(request.resource.data);
+      allow create, update: if isAdmin() || (hasPermission('banners') && isValidBanner(request.resource.data));
+      allow delete: if isAdmin() || hasPermission('banners');
     }
 
     match /showrooms/{showroomId} {
       allow read: if true;
-      allow write: if hasPermission('showrooms');
+      allow write: if isAdmin() || hasPermission('showrooms');
     }
 
     match /bank_accounts/{accountId} {
       allow read: if true;
-      allow write: if hasPermission('settings');
+      allow write: if isAdmin() || hasPermission('settings');
     }
 
     match /settings/{settingId} {
@@ -121,6 +125,17 @@ service cloud.firestore {
     match /product_telemetry/{productId} {
       allow read: if true;
       allow write: if true;
+    }
+
+    match /devices/{deviceId} {
+      allow create, update: if true;
+      allow read: if isAdmin() || hasPermission('devices') || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow create, read: if isAdmin() || hasPermission('devices');
+      allow update, delete: if isAdmin();
     }
   }
 }

@@ -52,6 +52,58 @@ import SEO from "./components/SEO";
 import SEODirectory from "./components/SEODirectory";
 import { ALL_SEO_KEYWORDS_LIST } from "./seo-data";
 
+declare global {
+  interface Window {
+    setAndroidDeviceToken?: (token: string, model?: string) => void;
+  }
+}
+
+const getBrowserDeviceModel = () => {
+  if (typeof window === "undefined" || !navigator) return "متصفح ويب";
+  const ua = navigator.userAgent;
+  let os = "جهاز";
+  let browser = "متصفح";
+
+  if (ua.indexOf("Win") !== -1) os = "كمبيوتر Windows";
+  else if (ua.indexOf("Mac") !== -1 && ua.indexOf("iPhone") === -1 && ua.indexOf("iPad") === -1) os = "كمبيوتر Mac";
+  else if (ua.indexOf("iPhone") !== -1) os = "هاتف iPhone";
+  else if (ua.indexOf("iPad") !== -1) os = "جهاز iPad";
+  else if (ua.indexOf("Android") !== -1) os = "هاتف Android";
+  else if (ua.indexOf("Linux") !== -1) os = "جهاز Linux";
+
+  if (ua.indexOf("Chrome") !== -1) browser = "Chrome";
+  else if (ua.indexOf("Safari") !== -1 && ua.indexOf("Chrome") === -1) browser = "Safari";
+  else if (ua.indexOf("Firefox") !== -1) browser = "Firefox";
+  else if (ua.indexOf("Edg") !== -1) browser = "Edge";
+  else if (ua.indexOf("Opera") !== -1 || ua.indexOf("OPR") !== -1) browser = "Opera";
+
+  return `${os} (${browser})`;
+};
+
+const registerDevice = async (token: string, model: string, platform: "android" | "web", currentUser: any) => {
+  try {
+    const deviceRef = doc(db, "devices", token);
+    const payload: any = {
+      fcmToken: token,
+      deviceModel: model || (platform === "android" ? "جهاز أندرويد" : getBrowserDeviceModel()),
+      platform: platform,
+      lastActiveAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    if (currentUser) {
+      payload.userId = currentUser.uid;
+      payload.userEmail = currentUser.email || "";
+    } else {
+      payload.userId = null;
+      payload.userEmail = null;
+    }
+    await setDoc(deviceRef, payload, { merge: true });
+    console.log(`🔥 Device ${platform} token successfully synchronized with Firestore:`, token);
+  } catch (error) {
+    console.error("❌ Error registering device token in Firestore:", error);
+  }
+};
+
 const testConnection = async () => {
   try {
     await getDoc(doc(db, 'test', 'connection'));
@@ -66,6 +118,7 @@ export default function App() {
   useEffect(() => {
     testConnection();
   }, []);
+
   const [products, setProducts] = useState<Product[]>([]);
   // Generate product titles as keywords for global SEO
   const productTitlesAsKeywords = useMemo(() => {
@@ -203,6 +256,35 @@ export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userRole, setUserRole] = useState<string>("customer");
   const [userPermissions, setUserPermissions] = useState<any>(null);
+
+  // Sync Device Tokens (Web and Android WebView) to User Auth State
+  useEffect(() => {
+    // 1. Handle Web/Browser Device registration
+    let webToken = localStorage.getItem("web_device_token");
+    if (!webToken) {
+      webToken = "web_" + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
+      localStorage.setItem("web_device_token", webToken);
+    }
+    const webModel = getBrowserDeviceModel();
+    registerDevice(webToken, webModel, "web", user);
+
+    // 2. Define App WebView Token setter
+    window.setAndroidDeviceToken = (token: string, model?: string) => {
+      console.log("📱 Android WebView passed FCM token:", token, "Device model:", model);
+      localStorage.setItem("android_fcm_token", token);
+      if (model) {
+        localStorage.setItem("android_device_model", model);
+      }
+      registerDevice(token, model || "Android Device", "android", user);
+    };
+
+    // 3. Register saved Android App Token if it exists
+    const savedToken = localStorage.getItem("android_fcm_token");
+    const savedModel = localStorage.getItem("android_device_model") || "Android Device";
+    if (savedToken) {
+      registerDevice(savedToken, savedModel, "android", user);
+    }
+  }, [user]);
   const [favorites, setFavorites] = useState<number[]>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("favorites");
@@ -1249,6 +1331,20 @@ export default function App() {
 
           if (telrData.url) {
             console.log("Redirecting directly to Telr gateway:", telrData.url);
+            
+            // Save telrRef to Firestore order document so we can automate tracking and background checks
+            if (telrData.ref && fsOrderId) {
+              try {
+                console.log(`💾 Persisting Telr Ref #${telrData.ref} to Firestore document #${fsOrderId}`);
+                await updateDoc(doc(db, "orders", fsOrderId), {
+                  telrRef: telrData.ref,
+                  gateway: "telr"
+                });
+              } catch (fsSaveErr) {
+                console.error("Failed to save Telr Ref to Firestore order:", fsSaveErr);
+              }
+            }
+            
             window.location.href = telrData.url;
             return;
           } else {
