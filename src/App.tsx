@@ -80,6 +80,13 @@ const getBrowserDeviceModel = () => {
   return `${os} (${browser})`;
 };
 
+const cleanPriceTextState = (priceVal: any): string => {
+  if (priceVal === null || priceVal === undefined) return "0.00";
+  const cleaned = priceVal.toString().replace(/[^\d.]/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? "0.00" : parsed.toFixed(2);
+};
+
 const registerDevice = async (token: string, model: string, platform: "android" | "web", currentUser: any) => {
   try {
     const deviceRef = doc(db, "devices", token);
@@ -90,9 +97,22 @@ const registerDevice = async (token: string, model: string, platform: "android" 
       lastActiveAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+
+    // Check if there is a client entered name saved locally
+    const savedName = typeof window !== "undefined" ? localStorage.getItem("client_entered_name") : null;
+    if (savedName) {
+      payload.clientName = savedName;
+    }
+
     if (currentUser) {
       payload.userId = currentUser.uid;
       payload.userEmail = currentUser.email || "";
+      if (currentUser.displayName) {
+        payload.clientName = currentUser.displayName;
+        if (typeof window !== "undefined") {
+          localStorage.setItem("client_entered_name", currentUser.displayName);
+        }
+      }
     } else {
       payload.userId = null;
       payload.userEmail = null;
@@ -120,6 +140,7 @@ export default function App() {
   }, []);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [activeNotification, setActiveNotification] = useState<{ title: string; body: string } | null>(null);
   // Generate product titles as keywords for global SEO
   const productTitlesAsKeywords = useMemo(() => {
     return products.slice(0, 50).map(p => p.name).join(", ");
@@ -285,6 +306,67 @@ export default function App() {
       registerDevice(savedToken, savedModel, "android", user);
     }
   }, [user]);
+
+  // Live in-app real-time notification receiver (for both Web and App)
+  useEffect(() => {
+    const pageLoadTime = new Date().toISOString();
+    const notisRef = collection(db, "notifications");
+    
+    const unsub = onSnapshot(notisRef, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === "added") {
+          const data = change.doc.data();
+          const createdAt = data.createdAt || "";
+          
+          if (createdAt > pageLoadTime) {
+            const target = data.target || "all";
+            const myWebToken = localStorage.getItem("web_device_token");
+            const myAndroidToken = localStorage.getItem("android_fcm_token");
+            
+            const isMatch = target === "all" || 
+                            (myWebToken && target === myWebToken) || 
+                            (myAndroidToken && target === myAndroidToken);
+                            
+            if (isMatch) {
+              console.log("🔔 [Live Notify] Received matching notification:", data);
+              setActiveNotification({
+                title: data.title || "إشعار جديد",
+                body: data.body || "",
+              });
+              
+              // Play a light subtle notification beep
+              try {
+                const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                if (audioCtx.state === 'suspended') {
+                  // Wait for user interaction if suspended
+                  const resumeAudio = () => {
+                    audioCtx.resume();
+                    document.removeEventListener('click', resumeAudio);
+                  };
+                  document.addEventListener('click', resumeAudio);
+                }
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+                gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.18);
+              } catch (e) {
+                // ignore audio context failures
+              }
+            }
+          }
+        }
+      });
+    }, (error) => {
+      console.warn("Notification listener permission or load error:", error);
+    });
+    
+    return () => unsub();
+  }, []);
   const [favorites, setFavorites] = useState<number[]>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("favorites");
@@ -392,7 +474,7 @@ export default function App() {
     localStorage.setItem("favorites", JSON.stringify(favorites));
   }, [favorites]);
 
-  const cartTotal = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
+  const cartTotal = cart.reduce((sum, item) => sum + parseFloat(cleanPriceTextState(item.price)) * item.quantity, 0);
 
   // Real-time Telemetry and Analytics Pipeline
   const recordProductEvent = async (product: Product, eventType: "view" | "click" | "cart") => {
@@ -442,7 +524,7 @@ export default function App() {
         const rawCartItems = cart.map(item => ({
           id: item.id,
           name: item.name,
-          price: parseFloat(item.price) || 0,
+          price: parseFloat(cleanPriceTextState(item.price)) || 0,
           quantity: item.quantity
         }));
         
@@ -825,8 +907,8 @@ export default function App() {
     const sorted = [...products];
     if (sortBy === "price") {
       sorted.sort((a, b) => {
-        const priceA = parseFloat(a.price);
-        const priceB = parseFloat(b.price);
+        const priceA = parseFloat(cleanPriceTextState(a.price));
+        const priceB = parseFloat(cleanPriceTextState(b.price));
         return sortOrder === "asc" ? priceA - priceB : priceB - priceA;
       });
     } else if (sortBy === "date") {
@@ -847,8 +929,8 @@ export default function App() {
         JSON.stringify(item.selectedAttributes || {}) === JSON.stringify(selectedAttributes || {})
       );
       
-      const itemPrice = variation ? variation.price : product.price;
-      const itemRegularPrice = variation ? variation.regular_price : product.regular_price;
+      const itemPrice = cleanPriceTextState(variation ? variation.price : product.price);
+      const itemRegularPrice = cleanPriceTextState(variation ? variation.regular_price : product.regular_price);
       
       if (existing) {
         return prev.map(item => 
@@ -962,6 +1044,21 @@ export default function App() {
     let usedEmail = user?.email || shippingDetails.email;
 
     try {
+      // Save client name from checkout to identify device
+      const clientName = `${shippingDetails.firstName || ""} ${shippingDetails.lastName || ""}`.trim();
+      if (clientName && typeof window !== "undefined") {
+        localStorage.setItem("client_entered_name", clientName);
+        const webToken = localStorage.getItem("web_device_token");
+        const savedToken = localStorage.getItem("android_fcm_token");
+        const savedModel = localStorage.getItem("android_device_model") || "Android Device";
+        if (webToken) {
+          registerDevice(webToken, getBrowserDeviceModel(), "web", currentUser);
+        }
+        if (savedToken) {
+          registerDevice(savedToken, savedModel, "android", currentUser);
+        }
+      }
+
       // 1. Automatic Registration if not logged in
       if (!currentUser && shippingDetails.email) {
         try {
@@ -1003,7 +1100,7 @@ export default function App() {
         items: cart.map(item => ({
           id: item.id || 0,
           name: item.name || "",
-          price: item.price || 0,
+          price: parseFloat(cleanPriceTextState(item.price)) || 0,
           quantity: item.quantity || 0,
           image: item.images?.[0]?.src || item.image || "",
           selectedAttributes: item.selectedAttributes ? JSON.parse(JSON.stringify(item.selectedAttributes)) : null
@@ -1082,7 +1179,7 @@ export default function App() {
           line_items: cart.map(item => ({
             product_id: item.id,
             quantity: item.quantity,
-            total: (parseFloat(item.price.toString()) * item.quantity).toFixed(2),
+            total: (parseFloat(cleanPriceTextState(item.price)) * item.quantity).toFixed(2),
           })),
           shipping_lines: selectedShipping ? [
             {
@@ -3102,6 +3199,45 @@ export default function App() {
           تواصل معنا
         </span>
       </a>
+
+      {/* Floating Real-time In-App Notification Toast */}
+      <AnimatePresence>
+        {activeNotification && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9, y: -20 }}
+            className="fixed top-6 left-6 z-[9999] max-w-sm w-full bg-white border border-gray-100 shadow-2xl rounded-2xl p-5 flex gap-4 text-right overflow-hidden shadow-red-200/50"
+            dir="rtl"
+          >
+            {/* Countdown line indicator at bottom */}
+            <motion.div
+              initial={{ width: "100%" }}
+              animate={{ width: "0%" }}
+              transition={{ duration: 7, ease: "linear" }}
+              onAnimationComplete={() => setActiveNotification(null)}
+              className="absolute bottom-0 right-0 h-1 bg-red-600"
+            />
+
+            <div className="bg-red-50 text-red-600 p-3.5 h-fit rounded-xl self-start shrink-0">
+              <MessageCircle size={22} className="fill-red-50" />
+            </div>
+
+            <div className="flex-1 space-y-1">
+              <div className="flex justify-between items-start gap-2">
+                <h4 className="font-extrabold text-sm text-gray-900 leading-snug">{activeNotification.title}</h4>
+                <button
+                  onClick={() => setActiveNotification(null)}
+                  className="p-1 -mt-1 -ml-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed font-semibold">{activeNotification.body}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -5030,6 +5166,9 @@ function LoginModal({ isOpen, onClose, onGoogleLogin }: { isOpen: boolean, onClo
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         if (displayName) {
           await updateProfile(userCredential.user, { displayName });
+          if (typeof window !== "undefined") {
+            localStorage.setItem("client_entered_name", displayName);
+          }
         }
         onClose();
       } else {

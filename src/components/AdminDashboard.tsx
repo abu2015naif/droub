@@ -101,6 +101,7 @@ interface Banner {
 export default function AdminDashboard({ userRole, userPermissions }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'employees' | 'shipping' | 'banners' | 'showrooms' | 'settings' | 'home' | 'payment_methods' | 'seo' | 'analytics' | 'devices'>('orders');
   const [devices, setDevices] = useState<any[]>([]);
+  const [deviceSearchQuery, setDeviceSearchQuery] = useState("");
   
   const [telemetrySessions, setTelemetrySessions] = useState<any[]>([]);
   const [productTelemetry, setProductTelemetry] = useState<any[]>([]);
@@ -154,16 +155,37 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
   const [isSendingNoti, setIsSendingNoti] = useState(false);
   const [notiLogs, setNotiLogs] = useState<any[]>([]);
 
-  const handleDeleteDevice = async (id: string) => {
-    if (window.confirm("هل أنت متأكد من رغبتك في إزالة هذا الجهاز تلقائياً من نظام الإشعارات؟")) {
-      try {
-        await deleteDoc(doc(db, "devices", id));
-        alert("تم حذف تسجيل الجهاز وإيقاف الإشعارات له بنجاح.");
-      } catch (error) {
-        console.error("Error deleting device:", error);
-        alert("فشل حذف الجهاز: صلاحيات غير كافية");
+  // Targeted Direct Message States
+  const [directMessageDevice, setDirectMessageDevice] = useState<any | null>(null);
+  const [directTitle, setDirectTitle] = useState("");
+  const [directBody, setDirectBody] = useState("");
+  const [isSendingDirect, setIsSendingDirect] = useState(false);
+  const [directStatus, setDirectStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const filteredDevices = useMemo(() => {
+    return devices.filter((device) => {
+      if (!deviceSearchQuery) return true;
+      const q = deviceSearchQuery.trim().toLowerCase();
+      const clientName = (device.clientName || "").toLowerCase();
+      const userEmail = (device.userEmail || "").toLowerCase();
+      const deviceModel = (device.deviceModel || "").toLowerCase();
+      return clientName.includes(q) || userEmail.includes(q) || deviceModel.includes(q);
+    });
+  }, [devices, deviceSearchQuery]);
+
+  const handleDeleteDevice = (id: string) => {
+    confirmDelete(
+      "إزالة تسجيل جهاز",
+      "هل أنت متأكد من رغبتك في إزالة هذا الجهاز تلقائياً من نظام الإشعارات؟ لن يتلقى إشعارات FCM بعد الآن.",
+      async () => {
+        try {
+          await deleteDoc(doc(db, "devices", id));
+        } catch (error) {
+          console.error("Error deleting device:", error);
+          alert("فشل حذف الجهاز: صلاحيات غير كافية");
+        }
       }
-    }
+    );
   };
 
   const handleSendNotification = async (e: React.FormEvent) => {
@@ -179,12 +201,15 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
 
     setIsSendingNoti(true);
     try {
+      const selectedDevice = devices.find(d => d.fcmToken === selectedDeviceToken || d.id === selectedDeviceToken);
+      const isWebTarget = selectedDevice?.platform === "web" || selectedDeviceToken.startsWith("web_");
+
       // 1. Write log to Firestore
       await addDoc(collection(db, "notifications"), {
         title: notiTitle,
         body: notiBody,
         target: sendTarget === 'all' ? 'all' : selectedDeviceToken,
-        targetDeviceModel: sendTarget === 'single' ? (devices.find(d => d.fcmToken === selectedDeviceToken)?.deviceModel || "Android Device") : "الجميع",
+        targetDeviceModel: sendTarget === 'single' ? (selectedDevice?.deviceModel || "Android Device") : "الجميع",
         createdAt: new Date().toISOString(),
         status: "sent"
       });
@@ -206,14 +231,93 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
       const resData = await response.json();
       console.log("FCM trigger response:", resData);
 
-      alert("تم إرسال الإشعار بنجاح! وسوف يتلقى الهاتف التنبيه فوراً.");
+      if (!response.ok || resData.success === false) {
+        throw new Error(resData.error || resData.message || "Failed API dispatch");
+      }
+
+      const isMockWeb = isWebTarget && sendTarget === 'single';
+      const successMsg = isMockWeb 
+        ? "تم إرسال الإشعار بنجاح! وبما أنه جهاز ويب/متصفح، فقد تم إيصاله فوراً على المتصفح مباشرة." 
+        : "تم إرسال الإشعار بنجاح! وسيتلقى الهاتف الإشعار والتنبيه فوراً عبر FCM.";
+      
+      alert(successMsg);
       setNotiTitle("");
       setNotiBody("");
     } catch (err: any) {
       console.error("Error trigger notification backend:", err);
-      alert("تم توثيق الإشعار بنجاح في قاعدة البيانات!");
+      alert(`تنبيه: تم تسجيل وتوثيق الإشعار كـ سجل تاريخي بنجاح، ولكن تعذر بَثّه لشبكة الهواتف. السبب: ${err.message || err}`);
     } finally {
       setIsSendingNoti(false);
+    }
+  };
+
+  const handleSendDirectNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directTitle || !directBody) {
+      setDirectStatus({ type: 'error', text: "الرجاء إدخال عنوان الإشعار ونص الرسالة" });
+      return;
+    }
+    if (!directMessageDevice) return;
+
+    setIsSendingDirect(true);
+    setDirectStatus(null);
+    try {
+      const token = directMessageDevice.fcmToken || directMessageDevice.id;
+      const isWebTarget = directMessageDevice.platform === "web" || token.startsWith("web_");
+
+      // 1. Write log to Firestore
+      await addDoc(collection(db, "notifications"), {
+        title: directTitle,
+        body: directBody,
+        target: token,
+        targetDeviceModel: directMessageDevice.deviceModel || "جهاز غير معروف",
+        createdAt: new Date().toISOString(),
+        status: "sent"
+      });
+
+      // 2. Trigger Node Express proxy service for FCM
+      const response = await fetch("/api/send-notification", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          target: "single",
+          token: token,
+          title: directTitle,
+          body: directBody
+        })
+      });
+
+      const resData = await response.json();
+      console.log("Direct FCM trigger response:", resData);
+
+      if (!response.ok || resData.success === false) {
+        throw new Error(resData.error || resData.message || "Failed API dispatch");
+      }
+
+      setDirectStatus({ 
+        type: 'success', 
+        text: isWebTarget 
+          ? "تم إرسال الإشعار بنجاح! وبما أنه جهاز ويب/متصفح، فقد تم إيصاله فوراً على المتصفح مباشرة." 
+          : "تم إرسال الإشعار بنجاح! وسيتلقى الهاتف الإشعار والتنبيه فوراً عبر FCM."
+      });
+      setDirectTitle("");
+      setDirectBody("");
+      
+      // Keep modal open briefly to show success, then close automatically
+      setTimeout(() => {
+        setDirectMessageDevice(null);
+        setDirectStatus(null);
+      }, 2200);
+    } catch (err: any) {
+      console.error("Error trigger targeted notification:", err);
+      setDirectStatus({ 
+        type: 'error', 
+        text: `تم تسجيل وتوثيق الإشعار كـ سجل تاريخي بنجاح، ولكن تعذر بَثّه لشبكة الهواتف. السبب: ${err.message || err}`
+      });
+    } finally {
+      setIsSendingDirect(false);
     }
   };
 
@@ -630,7 +734,11 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
     // Listen to registered devices
     const devicesRef = collection(db, "devices");
     const unsubDevices = onSnapshot(devicesRef, (snapshot) => {
-      const data = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+      const data = snapshot.docs.map(docSnap => ({ 
+        id: docSnap.id, 
+        fcmToken: docSnap.data().fcmToken || docSnap.id, 
+        ...docSnap.data() 
+      }));
       setDevices(data);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, "devices");
@@ -2950,8 +3058,25 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                         </span>
                       </div>
 
+                      {/* Search Input */}
+                      <div className="p-4 border-b border-gray-100 bg-white">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="ابحث عن اسم العميل، بريد الحساب، أو طراز الجهاز..."
+                            value={deviceSearchQuery}
+                            onChange={(e) => setDeviceSearchQuery(e.target.value)}
+                            className="w-full pl-3 pr-10 py-2.5 text-sm rounded-xl border border-gray-200 outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all font-semibold text-right"
+                            dir="rtl"
+                          />
+                          <div className="absolute inset-y-0 right-0 pr-3-custom pr-3 flex items-center pointer-events-none text-gray-400">
+                            <Search size={16} />
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="divide-y divide-gray-50 max-h-[500px] overflow-y-auto">
-                        {devices.map((device, index) => (
+                        {filteredDevices.map((device, index) => (
                           <div key={device.id || index} className="p-6 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:bg-gray-50/50 transition-colors">
                             <div className="flex items-start gap-4">
                               <div className="p-3 bg-red-50 text-red-600 rounded-xl mt-1">
@@ -2963,6 +3088,11 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                                   <span className="text-[10px] bg-green-50 text-green-600 font-bold px-2 py-0.5 rounded-full">
                                     {device.platform || "android"}
                                   </span>
+                                  {device.clientName && (
+                                    <span className="text-[10.5px] bg-red-50 text-red-600 border border-red-100 font-bold px-2.5 py-0.5 rounded-full">
+                                      العميل: {device.clientName}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex flex-col gap-1 text-xs text-gray-400 font-medium">
                                   <div className="flex items-center gap-1 font-mono text-[10px]">
@@ -3015,11 +3145,12 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                               <div className="flex gap-2 mt-2">
                                 <button 
                                   onClick={() => {
-                                    setSendTarget('single');
-                                    setSelectedDeviceToken(device.fcmToken);
-                                    alert(`تم اختيار الجهاز للرسائل الفردية بنجاح.`);
+                                    setDirectMessageDevice(device);
+                                    setDirectTitle("");
+                                    setDirectBody("");
+                                    setDirectStatus(null);
                                   }}
-                                  className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-100 font-bold hover:bg-red-100 hover:text-red-700 rounded-lg transition-colors flex items-center gap-1"
+                                  className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-100 font-bold hover:bg-red-100 hover:text-red-700 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                                 >
                                   <MessageCircle size={12} />
                                   <span>توجيه رسالة</span>
@@ -3039,6 +3170,19 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                           <div className="p-12 text-center text-gray-400">
                             <Smartphone size={40} className="mx-auto mb-3 text-gray-200" />
                             <p className="text-sm">لم يسجل أي مستخدم دخوله من التطبيق بعد.</p>
+                          </div>
+                        )}
+
+                        {devices.length > 0 && filteredDevices.length === 0 && (
+                          <div className="p-12 text-center text-gray-400">
+                            <Search size={40} className="mx-auto mb-3 text-red-100" />
+                            <p className="text-sm font-bold text-gray-600">لم يتم العثور على أجهزة تطابق خيارات البحث.</p>
+                            <button
+                              onClick={() => setDeviceSearchQuery("")}
+                              className="mt-3 text-xs text-red-600 bg-red-50 hover:bg-red-105 border border-red-100 font-bold px-3 py-1.5 rounded-xl transition-all"
+                            >
+                              إعادة ضبط البحث
+                            </button>
                           </div>
                         )}
                       </div>
@@ -3092,11 +3236,17 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                                 className="w-full p-3 rounded-2xl border border-gray-200 bg-white text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none"
                               >
                                 <option value="">-- اختر جهاز مستهدف --</option>
-                                {devices.map((d, index) => (
-                                  <option key={d.id || index} value={d.fcmToken}>
-                                    {d.deviceModel} ({d.userEmail || "زائر"})
-                                  </option>
-                                ))}
+                                {devices.map((d, index) => {
+                                  const labelParts = [];
+                                  if (d.clientName) labelParts.push(`العميل: ${d.clientName}`);
+                                  if (d.userEmail) labelParts.push(d.userEmail);
+                                  const suffix = labelParts.length > 0 ? labelParts.join(" - ") : "زائر";
+                                  return (
+                                    <option key={d.id || index} value={d.fcmToken}>
+                                      {d.deviceModel} ({suffix})
+                                    </option>
+                                  );
+                                })}
                               </select>
                             ) : (
                               <div className="text-xs text-red-500 bg-red-50 p-3 rounded-xl border border-red-100 font-bold">
@@ -4056,6 +4206,119 @@ export default function AdminDashboard({ userRole, userPermissions }: AdminDashb
                   تأكيد الحذف
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Targeted Direct Message (DM) Composer Modal */}
+      <AnimatePresence>
+        {directMessageDevice && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl relative overflow-hidden text-right"
+              dir="rtl"
+            >
+              <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 bg-red-50 text-red-600 rounded-2xl">
+                    <MessageCircle size={20} className="fill-red-50" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-gray-900 leading-tight">توجيه إشعار مخصّص للجهاز</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      طراز: {directMessageDevice.deviceModel} • المنصة: {directMessageDevice.platform === 'web' ? 'متصفح ويب' : 'تطبيق هاتف'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDirectMessageDevice(null)}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {directStatus && (
+                <div className={`mb-4 p-4 rounded-2xl text-xs font-bold border ${
+                  directStatus.type === 'success' 
+                    ? 'bg-green-50 text-green-700 border-green-100' 
+                    : 'bg-red-50 text-red-600 border-red-100'
+                }`}>
+                  {directStatus.text}
+                </div>
+              )}
+
+              <form onSubmit={handleSendDirectNotification} className="space-y-4">
+                {directMessageDevice.clientName && (
+                  <div className="bg-red-50/50 border border-red-100/60 p-3 rounded-2xl text-xs space-y-0.5">
+                    <div className="text-red-500 font-bold">اسم العميل المستهدف:</div>
+                    <div className="text-red-900 font-extrabold text-sm">{directMessageDevice.clientName}</div>
+                  </div>
+                )}
+
+                {directMessageDevice.userEmail && (
+                  <div className="bg-gray-50 border border-gray-100 p-3 rounded-2xl text-xs space-y-0.5">
+                    <div className="text-gray-400 font-medium font-sans">البريد الإلكتروني للعميل:</div>
+                    <div className="text-gray-800 font-bold font-mono">{directMessageDevice.userEmail}</div>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-500 block">عنوان الرسالة</label>
+                  <input
+                    type="text"
+                    required
+                    value={directTitle}
+                    onChange={(e) => setDirectTitle(e.target.value)}
+                    placeholder="مثال: طلبك جاهز للتسليم! 🚚"
+                    className="w-full p-3.5 rounded-2xl border border-gray-200 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-500 block font-sans justify-self-start text-right">محتوى الإشعار</label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={directBody}
+                    onChange={(e) => setDirectBody(e.target.value)}
+                    placeholder="اكتب هنا الرسالة التي ستظهر للمستخدم فوراً..."
+                    className="w-full p-3.5 rounded-2xl border border-gray-200 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 resize-none"
+                  />
+                </div>
+
+                <div className="flex gap-2 justify-end pt-2">
+                  <button
+                    type="button"
+                    disabled={isSendingDirect}
+                    onClick={() => setDirectMessageDevice(null)}
+                    className="px-5 py-3 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    إلغاء التوجيه
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSendingDirect}
+                    className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-extrabold transition-all shadow-lg shadow-red-100 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isSendingDirect ? (
+                      <>
+                        <Clock className="animate-spin" size={16} />
+                        <span>جاري الإرسال للبث...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>إرسال وتوجيه الآن</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

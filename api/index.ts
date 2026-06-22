@@ -10,7 +10,8 @@ import multer from "multer";
 import FormData from "form-data";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
-import * as admin from "firebase-admin";
+import { initializeApp as initAdminApp, cert as adminCert } from "firebase-admin/app";
+import { getMessaging as getAdminMessaging } from "firebase-admin/messaging";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -987,11 +988,11 @@ async function startServer() {
           sku: item.sku || item.id?.toString() || "0",
           quantity: item.quantity || 1,
           unit_price: {
-            amount: parseFloat(item.price || "0"),
+            amount: parseFloat(item.price?.toString().replace(/[^\d.]/g, '') || "0"),
             currency: (currency || "SAR").toUpperCase()
           },
           total_amount: {
-            amount: parseFloat(item.price || "0") * (item.quantity || 1),
+            amount: parseFloat(item.price?.toString().replace(/[^\d.]/g, '') || "0") * (item.quantity || 1),
             currency: (currency || "SAR").toUpperCase()
           }
         })),
@@ -1138,7 +1139,7 @@ async function startServer() {
               title: item.name || "Product",
               description: item.name || "Product",
               quantity: item.quantity || 1,
-              unit_price: parseFloat(item.price || "0").toFixed(2),
+              unit_price: parseFloat(item.price?.toString().replace(/[^\d.]/g, '') || "0").toFixed(2),
               discount_amount: "0.00",
               reference_id: item.id?.toString() || "0",
               ordered: item.quantity || 1,
@@ -1668,13 +1669,20 @@ Sitemap: ${baseUrl}/sitemap.xml`);
   // Initialize Firebase Admin for FCM HTTP v1
   let adminAppInstance: any = null;
   function getFirebaseAdminMessaging() {
-    if (adminAppInstance) {
-      return adminAppInstance.messaging();
-    }
     const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
     if (!serviceAccountJson) {
       return null;
     }
+
+    if (adminAppInstance) {
+      try {
+        return getAdminMessaging(adminAppInstance);
+      } catch (e) {
+        console.error("❌ Failed to get messaging instance from cached app:", e);
+        return null;
+      }
+    }
+
     try {
       let serviceAccount;
       if (serviceAccountJson.trim().startsWith("{")) {
@@ -1682,10 +1690,12 @@ Sitemap: ${baseUrl}/sitemap.xml`);
       } else {
         serviceAccount = JSON.parse(Buffer.from(serviceAccountJson.trim(), 'base64').toString('utf8'));
       }
-      adminAppInstance = (admin as any).initializeApp({
-        credential: (admin as any).credential.cert(serviceAccount)
+
+      adminAppInstance = initAdminApp({
+        credential: adminCert(serviceAccount)
       }, "fcm-v1-app");
-      return adminAppInstance.messaging();
+
+      return getAdminMessaging(adminAppInstance);
     } catch (e) {
       console.error("❌ Failed to initialize firebase-admin for FCM V1:", e);
       return null;
@@ -1700,6 +1710,16 @@ Sitemap: ${baseUrl}/sitemap.xml`);
 
       if (!title || !body) {
         return res.status(400).json({ error: "Title and body are required properties" });
+      }
+
+      // Check if this is a web browser simulated device to avoid FCM invalid token errors
+      if (target === "single" && token && token.startsWith("web_")) {
+        console.log("🌐 [FCM API] Target is a web browser environment, skipped FCM dispatch. Saved log to Firestore.");
+        return res.json({
+          success: true,
+          status: "dispatched_web",
+          message: "Notification logged to database and dispatched to browser client."
+        });
       }
 
       // 1. Try modern FCM HTTP v1 (via firebase-admin) if service account JSON exists
