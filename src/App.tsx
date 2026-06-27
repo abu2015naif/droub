@@ -4090,6 +4090,10 @@ function CheckoutPage({
                         <option value="الدمام">الدمام</option>
                         <option value="مكة المكرمة">مكة المكرمة</option>
                         <option value="المدينة المنورة">المدينة المنورة</option>
+                        <option value="أبها">أبها</option>
+                        <option value="خميس مشيط">خميس مشيط</option>
+                        <option value="جيزان">جيزان</option>
+                        <option value="نجران">نجران</option>
                       </select>
                     </div>
                     <div className="space-y-2">
