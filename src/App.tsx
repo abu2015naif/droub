@@ -1795,7 +1795,7 @@ export default function App() {
       <div className="bg-red-700 text-white py-2 px-4 hidden md:block">
         <div className="max-w-7xl mx-auto flex justify-between items-center text-sm">
           <div className="flex gap-6">
-            <span className="flex items-center gap-2"><Phone size={14} /> <span dir="ltr">058 041 0063</span></span>
+            <span className="flex items-center gap-2"><Phone size={14} /> <span dir="ltr">054 539 1095</span></span>
             <span className="flex items-center gap-2"><Mail size={14} /> info@droubalsalamah.com</span>
           </div>
           <div className="flex items-center gap-2">
@@ -2944,7 +2944,7 @@ export default function App() {
                 </li>
                 <li className="flex items-center gap-3">
                   <Phone size={20} className="text-red-500 shrink-0" />
-                  <span dir="ltr">058 041 0063</span>
+                  <span dir="ltr">054 539 1095</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <Mail size={20} className="text-red-500 shrink-0" />
@@ -3174,7 +3174,7 @@ export default function App() {
         </button>
 
         <a 
-          href="https://wa.me/966580410063" 
+          href="https://wa.me/966545391095" 
           target="_blank" 
           rel="noopener noreferrer"
           className="flex flex-col items-center gap-1 min-w-[60px] text-green-600"
@@ -3188,7 +3188,7 @@ export default function App() {
 
       {/* Floating WhatsApp Button */}
       <a 
-        href="https://wa.me/966580410063" 
+        href="https://wa.me/966545391095" 
         target="_blank" 
         rel="noopener noreferrer"
         className="fixed bottom-28 lg:bottom-10 right-6 z-40 bg-green-500 text-white p-4 rounded-full shadow-2xl hover:bg-green-600 transition-all hover:scale-110 flex items-center justify-center group"
@@ -3318,7 +3318,7 @@ function ReturnsPage({ onBack }: { onBack: () => void }) {
         <div className="pt-10 border-t border-gray-50 flex flex-col md:flex-row items-center justify-between gap-6">
           <p className="text-sm text-gray-400">آخر تحديث: {new Date().toLocaleDateString('ar-SA')}</p>
           <button 
-            onClick={() => window.open('https://wa.me/966580410063', '_blank')}
+            onClick={() => window.open('https://wa.me/966545391095', '_blank')}
             className="bg-green-500 text-white px-8 py-3 rounded-2xl font-bold hover:bg-green-600 transition-all flex items-center gap-2 shadow-lg shadow-green-100"
           >
             <MessageCircle size={20} /> تواصل مع الدعم الفني
@@ -4972,7 +4972,7 @@ function ProductModal({ product, isOpen, onClose, onAddToCart, isFavorite, onTog
                   onClick={() => {
                     const currentAttrText = Object.entries(selectedAttributes).map(([k, v]) => `${k}: ${v}`).join(', ');
                     const message = `السلام عليكم، أرغب في الاستفسار عن منتج: ${product.name}\n${currentAttrText ? `الخيارات المختارة: ${currentAttrText}\n` : ''}السعر: ${currentPrice} ر.س\nالرابط: ${window.location.origin}/?product=${product.id}`;
-                    window.open(`https://wa.me/966580410063?text=${encodeURIComponent(message)}`, '_blank');
+                    window.open(`https://wa.me/966545391095?text=${encodeURIComponent(message)}`, '_blank');
                   }}
                   className="flex-1 bg-green-500 text-white py-4 rounded-2xl font-bold text-lg hover:bg-green-600 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-3"
                 >
