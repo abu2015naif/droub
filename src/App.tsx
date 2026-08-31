@@ -87,6 +87,33 @@ const cleanPriceTextState = (priceVal: any): string => {
   return isNaN(parsed) ? "0.00" : parsed.toFixed(2);
 };
 
+export const DEFAULT_SHIPPING_METHODS = [
+  {
+    id: "flat_rate_100",
+    instance_id: 100,
+    method_id: "flat_rate",
+    method_title: "شحن ثابت - لجميع أنحاء المملكة",
+    title: "شحن ثابت - لجميع أنحاء المملكة",
+    enabled: true,
+    zone_name: "توصيل لكافة مدن ومحافظات المملكة العربية السعودية",
+    settings: {
+      cost: { value: "100" }
+    }
+  },
+  {
+    id: "customer_account_shipping",
+    instance_id: 101,
+    method_id: "customer_account",
+    method_title: "شحن على حساب العميل",
+    title: "شحن على حساب العميل",
+    enabled: true,
+    zone_name: "يتم سداد قيمة الشحن لشركة الشحن عند الاستلام",
+    settings: {
+      cost: { value: "0" }
+    }
+  }
+];
+
 const registerDevice = async (token: string, model: string, platform: "android" | "web", currentUser: any) => {
   try {
     const deviceRef = doc(db, "devices", token);
@@ -273,7 +300,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"home" | "shop" | "admin" | "checkout" | "profile" | "returns" | "seo-directory">("home");
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [shippingMethods, setShippingMethods] = useState<any[]>([]);
+  const [shippingMethods, setShippingMethods] = useState<any[]>(DEFAULT_SHIPPING_METHODS);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userRole, setUserRole] = useState<string>("customer");
   const [userPermissions, setUserPermissions] = useState<any>(null);
@@ -1029,9 +1056,20 @@ export default function App() {
       const res = await fetch("/api/shipping/methods");
       const data = await res.json();
       console.log("📦 Received shipping methods:", data);
-      setShippingMethods(Array.isArray(data) ? data : []);
+      if (Array.isArray(data) && data.length > 0) {
+        const merged = [...data];
+        DEFAULT_SHIPPING_METHODS.forEach(defM => {
+          if (!merged.some(m => m.id === defM.id || (defM.id === 'flat_rate_100' && (m.settings?.cost?.value === '100' || m.title?.includes('100'))) || (defM.id === 'customer_account_shipping' && (m.method_id === 'customer_account' || m.title?.includes('حساب العميل'))))) {
+            merged.push(defM);
+          }
+        });
+        setShippingMethods(merged);
+      } else {
+        setShippingMethods(DEFAULT_SHIPPING_METHODS);
+      }
     } catch (error) {
       console.error("❌ Error fetching shipping methods:", error);
+      setShippingMethods(DEFAULT_SHIPPING_METHODS);
     }
 
     setIsCartOpen(false);
@@ -3858,24 +3896,25 @@ function CheckoutPage({
   const filteredShippingMethods = useMemo(() => {
     if (isPickup) return [];
     
-    const enabledMethods = shippingMethods.filter(isShippingEnabled);
+    let allAvailable = [...(shippingMethods.length > 0 ? shippingMethods : DEFAULT_SHIPPING_METHODS)];
     
-    const freeShippingMethods = enabledMethods.filter(method => {
-      if (method.method_id === 'free_shipping') {
-        const settings = method.settings || {};
-        const minAmountVal = settings.min_amount?.value || settings.min_amount || "0";
-        const minAmount = parseFloat(String(minAmountVal));
-        return total >= minAmount;
+    DEFAULT_SHIPPING_METHODS.forEach(defM => {
+      if (!allAvailable.some(m => m.id === defM.id || (defM.id === 'flat_rate_100' && (m.settings?.cost?.value === '100' || m.title?.includes('100'))) || (defM.id === 'customer_account_shipping' && (m.method_id === 'customer_account' || m.title?.includes('حساب العميل'))))) {
+        allAvailable.push(defM);
       }
-      return false;
     });
 
-    if (freeShippingMethods.length > 0) {
-      return freeShippingMethods;
-    }
+    const enabledMethods = allAvailable.filter(isShippingEnabled);
+    
+    const isFreeEligible = total >= shippingThreshold;
 
-    return enabledMethods.filter(method => method.method_id !== 'free_shipping');
-  }, [shippingMethods, total, isPickup]);
+    return enabledMethods.filter(method => {
+      if (method.method_id === 'free_shipping') {
+        return isFreeEligible;
+      }
+      return true;
+    });
+  }, [shippingMethods, total, isPickup, shippingThreshold]);
 
   useEffect(() => {
     if (filteredShippingMethods.length > 0 && !selectedShipping && !isPickup) {
@@ -4190,24 +4229,35 @@ function CheckoutPage({
                       <p className="text-[10px] text-gray-400 mt-1">تأكد من اختيار "توصيل للمنزل" أو تواصل معنا عبر واتساب للمساعدة.</p>
                     </div>
                   ) : (
-                    filteredShippingMethods.map((method) => (
-                      <div 
-                        key={method.id}
-                        onClick={() => setSelectedShipping(method)}
-                        className={`flex items-center justify-between p-4 border-2 rounded-2xl cursor-pointer transition-all ${selectedShipping?.id === method.id ? "border-red-600 bg-red-50" : "border-gray-100 hover:border-gray-200"}`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className={`w-6 h-6 rounded-full border-4 ${selectedShipping?.id === method.id ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
-                          <div>
-                            <p className="font-bold">{method.title || method.method_title}</p>
-                            <p className="text-xs text-gray-500">{method.zone_name || "شحن خارجي"}</p>
+                    filteredShippingMethods.map((method) => {
+                      const isFree = method.method_id === 'free_shipping';
+                      const isCustomerAccount = method.method_id === 'customer_account' || method.id === 'customer_account_shipping' || (method.title && method.title.includes('حساب العميل'));
+                      const costVal = method.settings?.cost?.value || method.cost || "0";
+                      const isSelected = selectedShipping?.id === method.id || (isCustomerAccount && (selectedShipping?.method_id === 'customer_account' || selectedShipping?.id === 'customer_account_shipping'));
+
+                      return (
+                        <div 
+                          key={method.id}
+                          onClick={() => setSelectedShipping(method)}
+                          className={`flex items-center justify-between p-4 border-2 rounded-2xl cursor-pointer transition-all ${isSelected ? "border-red-600 bg-red-50 shadow-sm" : "border-gray-100 hover:border-gray-200"}`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className={`w-6 h-6 rounded-full border-4 ${isSelected ? "border-red-600 bg-white" : "border-gray-200 bg-white"}`} />
+                            <div>
+                              <p className="font-bold text-gray-900">{method.title || method.method_title}</p>
+                              <p className="text-xs text-gray-500">
+                                {isCustomerAccount 
+                                  ? "يتم سداد قيمة الشحن لشركة الشحن عند الاستلام" 
+                                  : (method.zone_name || "شحن وتوصيل سريع لكافة مناطق المملكة")}
+                              </p>
+                            </div>
                           </div>
+                          <span className={`font-bold text-sm ${isFree || isCustomerAccount ? 'text-green-600 bg-green-50 px-3 py-1 rounded-full' : 'text-red-700 font-mono'}`}>
+                            {isFree ? 'مجاني' : isCustomerAccount ? 'على حساب العميل' : `${costVal} ر.س`}
+                          </span>
                         </div>
-                        <span className="font-bold text-red-700">
-                          {method.method_id === 'free_shipping' ? 'مجاني' : `${method.settings?.cost?.value || "0"} ر.س`}
-                        </span>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -4495,7 +4545,13 @@ function CheckoutPage({
               </div>
               <div className="flex justify-between text-gray-400">
                 <span>رسوم التوصيل</span>
-                <span className={shippingCost === 0 ? "text-green-400" : "text-white"}>{shippingCost === 0 ? "مجاني" : `${shippingCost.toFixed(2)} ر.س`}</span>
+                <span className={shippingCost === 0 ? "text-green-400" : "text-white"}>
+                  {selectedShipping?.method_id === 'customer_account' || selectedShipping?.id === 'customer_account_shipping' || (selectedShipping?.title && selectedShipping?.title.includes('حساب العميل'))
+                    ? "على حساب العميل"
+                    : shippingCost === 0 
+                      ? "مجاني" 
+                      : `${shippingCost.toFixed(2)} ر.س`}
+                </span>
               </div>
               <div className="flex justify-between text-2xl font-black pt-4 border-t border-white/10">
                 <span>الإجمالي</span>

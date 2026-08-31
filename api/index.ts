@@ -1331,6 +1331,45 @@ async function startServer() {
       }
 
       console.log(`🚀 Total shipping methods found: ${allMethods.length}`);
+
+      // Ensure the standard required methods are included
+      const hasFlatRate100 = allMethods.some((m: any) => m.settings?.cost?.value === "100" || m.title?.includes("100") || (m.method_id === "flat_rate" && m.settings?.cost?.value === "100"));
+      const hasCustomerAccount = allMethods.some((m: any) => m.method_id === "customer_account" || m.title?.includes("حساب العميل") || m.id === "customer_account_shipping");
+      
+      const defaultMethods: any[] = [];
+      if (!hasFlatRate100) {
+        defaultMethods.push({
+          id: "flat_rate_100",
+          instance_id: 100,
+          method_id: "flat_rate",
+          method_title: "شحن ثابت - لجميع أنحاء المملكة",
+          title: "شحن ثابت - لجميع أنحاء المملكة",
+          enabled: true,
+          zone_id: 0,
+          zone_name: "توصيل لكافة مدن ومحافظات المملكة العربية السعودية",
+          settings: {
+            cost: { value: "100" }
+          }
+        });
+      }
+      if (!hasCustomerAccount) {
+        defaultMethods.push({
+          id: "customer_account_shipping",
+          instance_id: 101,
+          method_id: "customer_account",
+          method_title: "شحن على حساب العميل",
+          title: "شحن على حساب العميل",
+          enabled: true,
+          zone_id: 0,
+          zone_name: "يتم سداد قيمة الشحن لشركة الشحن عند الاستلام",
+          settings: {
+            cost: { value: "0" }
+          }
+        });
+      }
+
+      allMethods = [...allMethods, ...defaultMethods];
+
       setCachedData(cacheKey, allMethods, SHORT_CACHE_TTL);
       res.json(allMethods);
     } catch (error: any) {
